@@ -7,6 +7,7 @@ import com.project.meet.common.exception.ApiError;
 import com.project.meet.user.api.UserProfileResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.resttestclient.TestRestTemplate;
 import org.springframework.boot.resttestclient.autoconfigure.AutoConfigureTestRestTemplate;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -14,6 +15,11 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -23,6 +29,9 @@ class AuthFlowIntegrationTest {
 
 	@Autowired
 	private TestRestTemplate restTemplate;
+
+	@Value("${local.server.port}")
+	private int port;
 
 	@Test
 	void registerThenLoginThenAccessProtectedEndpoint() {
@@ -85,5 +94,34 @@ class AuthFlowIntegrationTest {
 
 		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
 		assertThat(response.getBody().code()).isEqualTo("UNAUTHENTICATED");
+	}
+
+	/**
+	 * Regression test: a browser sends an unauthenticated OPTIONS preflight
+	 * before any cross-origin request that needs one (POST with a JSON body,
+	 * or any request carrying an Authorization header) — including requests
+	 * targeting protected routes. If Spring Security rejects that preflight
+	 * for lacking a JWT, the browser never sends the real request at all, so
+	 * every authenticated call from the frontend silently fails CORS. Uses
+	 * raw HttpClient because TestRestTemplate's default JDK
+	 * HttpURLConnection-based request factory silently drops the "Origin"
+	 * header (it's on that client's restricted-header list).
+	 */
+	@Test
+	void preflightForProtectedEndpointSucceedsWithoutAuthentication() throws Exception {
+		HttpRequest preflight = HttpRequest.newBuilder()
+				.uri(URI.create("http://localhost:" + port + "/api/v1/users/me"))
+				.header("Origin", "http://localhost:3000")
+				.header("Access-Control-Request-Method", "GET")
+				.header("Access-Control-Request-Headers", "authorization")
+				.method("OPTIONS", HttpRequest.BodyPublishers.noBody())
+				.build();
+
+		HttpResponse<String> response = HttpClient.newHttpClient()
+				.send(preflight, HttpResponse.BodyHandlers.ofString());
+
+		assertThat(response.statusCode()).isEqualTo(200);
+		assertThat(response.headers().firstValue("Access-Control-Allow-Origin"))
+				.contains("http://localhost:3000");
 	}
 }

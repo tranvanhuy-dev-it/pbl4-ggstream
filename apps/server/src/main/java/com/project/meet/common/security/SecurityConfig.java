@@ -2,6 +2,7 @@ package com.project.meet.common.security;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -34,6 +35,12 @@ public class SecurityConfig {
 				.csrf(csrf -> csrf.disable())
 				.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 				.authorizeHttpRequests(auth -> auth
+						// CORS preflight requests never carry the JWT (browsers strip
+						// custom headers/credentials from OPTIONS preflights), so they
+						// must be let through regardless of the target route's auth
+						// requirement — otherwise the browser never sends the real
+						// request to any protected endpoint at all.
+						.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 						.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
 						.requestMatchers("/api/v1/auth/**").permitAll()
 						.anyRequest().authenticated()
