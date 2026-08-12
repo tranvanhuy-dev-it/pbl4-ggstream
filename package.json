@@ -1,0 +1,13 @@
+{
+  "name": "meet-platform",
+  "private": true,
+  "description": "Meeting & livestream platform monorepo — Next.js frontend, Spring Boot backend. No Docker.",
+  "scripts": {
+    "web:install": "npm --prefix apps/web install",
+    "web:dev": "npm --prefix apps/web run dev",
+    "web:build": "npm --prefix apps/web run build",
+    "server:dev": "cd apps/server && ./mvnw spring-boot:run",
+    "server:test": "cd apps/server && ./mvnw test",
+    "server:build": "cd apps/server && ./mvnw clean package"
+  }
+}

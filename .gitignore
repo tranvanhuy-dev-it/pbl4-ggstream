@@ -1,0 +1,35 @@
+# --- Secrets ---
+.env
+.env.local
+.env.*.local
+!*.env.example
+
+# --- Node / Next.js (apps/web) ---
+node_modules/
+.next/
+out/
+next-env.d.ts
+npm-debug.log*
+
+# --- Java / Maven (apps/server) ---
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+HELP.md
+
+# --- IDE ---
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log
+logs/
