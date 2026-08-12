@@ -28,7 +28,11 @@ export function VideoPreview({
         autoPlay
         playsInline
         muted
-        className={`h-full w-full object-cover ${cameraEnabled ? "" : "hidden"}`}
+        // Mirrored so the self-view feels like looking in a mirror (standard
+        // for local preview in every video call app). The stream sent to
+        // remote peers later is never mirrored — this is a CSS-only,
+        // local-rendering concern.
+        className={`h-full w-full origin-center -scale-x-100 object-cover ${cameraEnabled ? "" : "hidden"}`}
       />
       {!cameraEnabled && (
         <div className="flex h-full w-full items-center justify-center">
