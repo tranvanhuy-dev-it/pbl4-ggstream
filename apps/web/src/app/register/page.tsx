@@ -1,10 +1,10 @@
+import { AuthLayout } from "@/features/auth/components/AuthLayout";
 import { RegisterForm } from "@/features/auth/components/RegisterForm";
 
 export default function RegisterPage() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center gap-8 px-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Create your account</h1>
+    <AuthLayout title="Create your account" subtitle="Start hosting meetings in minutes">
       <RegisterForm />
-    </main>
+    </AuthLayout>
   );
 }

@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/features/auth/context/AuthContext";
 import { ApiClientError } from "@/lib/api/client";
+import { TextField } from "./TextField";
+import { ErrorAlert } from "./ErrorAlert";
+import { SubmitButton } from "./SubmitButton";
 
 export function RegisterForm() {
   const { register } = useAuth();
@@ -30,58 +33,43 @@ export function RegisterForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex w-full max-w-sm flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <label htmlFor="displayName" className="text-sm font-medium">
-          Display name
-        </label>
-        <input
-          id="displayName"
-          type="text"
-          required
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-          className="rounded-md border border-black/15 dark:border-white/20 bg-transparent px-3 py-2 text-sm"
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label htmlFor="email" className="text-sm font-medium">
-          Email
-        </label>
-        <input
-          id="email"
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="rounded-md border border-black/15 dark:border-white/20 bg-transparent px-3 py-2 text-sm"
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label htmlFor="password" className="text-sm font-medium">
-          Password
-        </label>
-        <input
-          id="password"
-          type="password"
-          required
-          minLength={8}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="rounded-md border border-black/15 dark:border-white/20 bg-transparent px-3 py-2 text-sm"
-        />
-      </div>
-      {error && <p className="text-sm text-red-500">{error}</p>}
-      <button
-        type="submit"
-        disabled={submitting}
-        className="rounded-md bg-foreground text-background px-4 py-2 text-sm font-medium disabled:opacity-50"
-      >
-        {submitting ? "Creating account…" : "Create account"}
-      </button>
-      <p className="text-center text-sm text-black/60 dark:text-white/60">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <TextField
+        id="displayName"
+        label="Display name"
+        type="text"
+        autoComplete="name"
+        required
+        value={displayName}
+        onChange={(e) => setDisplayName(e.target.value)}
+      />
+      <TextField
+        id="email"
+        label="Email"
+        type="email"
+        autoComplete="email"
+        required
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+      />
+      <TextField
+        id="password"
+        label="Password"
+        type="password"
+        autoComplete="new-password"
+        required
+        minLength={8}
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+      />
+      <p className="-mt-2 text-xs text-muted">At least 8 characters.</p>
+      {error && <ErrorAlert message={error} />}
+      <SubmitButton loading={submitting} loadingLabel="Creating account…">
+        Create account
+      </SubmitButton>
+      <p className="text-center text-sm text-muted">
         Already have an account?{" "}
-        <Link href="/login" className="underline">
+        <Link href="/login" className="font-medium text-accent hover:underline">
           Sign in
         </Link>
       </p>

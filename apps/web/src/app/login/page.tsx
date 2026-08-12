@@ -1,10 +1,10 @@
+import { AuthLayout } from "@/features/auth/components/AuthLayout";
 import { LoginForm } from "@/features/auth/components/LoginForm";
 
 export default function LoginPage() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center gap-8 px-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
+    <AuthLayout title="Welcome back" subtitle="Sign in to continue to your meetings">
       <LoginForm />
-    </main>
+    </AuthLayout>
   );
 }

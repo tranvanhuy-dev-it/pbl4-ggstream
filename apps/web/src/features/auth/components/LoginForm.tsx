@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/features/auth/context/AuthContext";
 import { ApiClientError } from "@/lib/api/client";
+import { TextField } from "./TextField";
+import { ErrorAlert } from "./ErrorAlert";
+import { SubmitButton } from "./SubmitButton";
 
 export function LoginForm() {
   const { login } = useAuth();
@@ -29,44 +32,32 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex w-full max-w-sm flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <label htmlFor="email" className="text-sm font-medium">
-          Email
-        </label>
-        <input
-          id="email"
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="rounded-md border border-black/15 dark:border-white/20 bg-transparent px-3 py-2 text-sm"
-        />
-      </div>
-      <div className="flex flex-col gap-1">
-        <label htmlFor="password" className="text-sm font-medium">
-          Password
-        </label>
-        <input
-          id="password"
-          type="password"
-          required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="rounded-md border border-black/15 dark:border-white/20 bg-transparent px-3 py-2 text-sm"
-        />
-      </div>
-      {error && <p className="text-sm text-red-500">{error}</p>}
-      <button
-        type="submit"
-        disabled={submitting}
-        className="rounded-md bg-foreground text-background px-4 py-2 text-sm font-medium disabled:opacity-50"
-      >
-        {submitting ? "Signing in…" : "Sign in"}
-      </button>
-      <p className="text-center text-sm text-black/60 dark:text-white/60">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      <TextField
+        id="email"
+        label="Email"
+        type="email"
+        autoComplete="email"
+        required
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+      />
+      <TextField
+        id="password"
+        label="Password"
+        type="password"
+        autoComplete="current-password"
+        required
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+      />
+      {error && <ErrorAlert message={error} />}
+      <SubmitButton loading={submitting} loadingLabel="Signing in…">
+        Sign in
+      </SubmitButton>
+      <p className="text-center text-sm text-muted">
         No account?{" "}
-        <Link href="/register" className="underline">
+        <Link href="/register" className="font-medium text-accent hover:underline">
           Register
         </Link>
       </p>
