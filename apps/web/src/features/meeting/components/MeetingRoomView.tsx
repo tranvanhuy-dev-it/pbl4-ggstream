@@ -1,16 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/features/auth/context/AuthContext";
+import { useLocalMedia } from "@/hooks/useLocalMedia";
+import { VideoTile } from "@/components/VideoTile";
+import { MediaToggleButton } from "@/components/MediaToggleButton";
+import { MicOnIcon, MicOffIcon, CameraOnIcon, CameraOffIcon, PhoneHangupIcon } from "@/components/icons";
 import * as meetingApi from "@/features/meeting/api/meetingApi";
 import type { Meeting } from "@/features/meeting/api/meetingApi";
 import { useMeetingSocket } from "@/features/meeting/hooks/useMeetingSocket";
+import { useWebRtcPeers } from "@/features/meeting/hooks/useWebRtcPeers";
 import type { ParticipantPresencePayload, SignalingEnvelope } from "@/lib/websocket/types";
 
 export function MeetingRoomView({ code }: { code: string }) {
   const { status: authStatus, user, token } = useAuth();
   const router = useRouter();
+  const { stream, error: mediaError, micEnabled, cameraEnabled, toggleMic, toggleCamera, stop: stopLocalMedia } = useLocalMedia();
 
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [participants, setParticipants] = useState<Map<string, ParticipantPresencePayload>>(new Map());
@@ -42,9 +48,8 @@ export function MeetingRoomView({ code }: { code: string }) {
   }, [authStatus, token, code]);
 
   // Seed the roster from REST (source of truth for "who's here right now"
-  // at page-load time) — the WebSocket below only carries deltas from that
-  // point forward, it has no way to describe the room's starting state on
-  // its own.
+  // at page-load time) — the WebSocket only carries deltas from that point
+  // forward, it has no way to describe the room's starting state on its own.
   useEffect(() => {
     if (!meeting || !token) return;
     let cancelled = false;
@@ -65,7 +70,23 @@ export function MeetingRoomView({ code }: { code: string }) {
     };
   }, [meeting, token]);
 
-  const handleSignalingMessage = useCallback((envelope: SignalingEnvelope) => {
+  const peerIds = useMemo(
+    () => Array.from(participants.keys()).filter((id) => id !== user?.id),
+    [participants, user?.id],
+  );
+
+  const { send, status: socketStatus } = useMeetingSocket(meeting?.id ?? null, token, (envelope) =>
+    handleSignalingMessage(envelope),
+  );
+
+  const { remoteStreams, handleEnvelope: handleWebRtcEnvelope } = useWebRtcPeers(
+    user?.id ?? null,
+    stream,
+    peerIds,
+    send,
+  );
+
+  function handleSignalingMessage(envelope: SignalingEnvelope) {
     if (envelope.type === "PARTICIPANT_JOINED" && envelope.payload) {
       const presence = envelope.payload as ParticipantPresencePayload;
       setParticipants((prev) => new Map(prev).set(presence.userId, presence));
@@ -76,30 +97,32 @@ export function MeetingRoomView({ code }: { code: string }) {
         next.delete(presence.userId);
         return next;
       });
+    } else if (envelope.type === "WEBRTC_OFFER" || envelope.type === "WEBRTC_ANSWER" || envelope.type === "ICE_CANDIDATE") {
+      handleWebRtcEnvelope(envelope);
     }
-  }, []);
-
-  const { status: socketStatus } = useMeetingSocket(meeting?.id ?? null, token, handleSignalingMessage);
+  }
 
   const handleLeave = useCallback(async () => {
     if (!meeting || !token) return;
     setLeaving(true);
+    stopLocalMedia();
     try {
       await meetingApi.leaveMeeting(token, meeting.id);
     } finally {
       router.push("/");
     }
-  }, [meeting, token, router]);
+  }, [meeting, token, router, stopLocalMedia]);
 
   const handleEnd = useCallback(async () => {
     if (!meeting || !token) return;
     setLeaving(true);
+    stopLocalMedia();
     try {
       await meetingApi.endMeeting(token, meeting.id);
     } finally {
       router.push("/");
     }
-  }, [meeting, token, router]);
+  }, [meeting, token, router, stopLocalMedia]);
 
   if (authStatus !== "authenticated" || (!meeting && !loadError)) {
     return (
@@ -118,10 +141,10 @@ export function MeetingRoomView({ code }: { code: string }) {
   }
 
   const isHost = user?.id === meeting.hostId;
-  const participantList = Array.from(participants.values());
+  const remoteParticipants = Array.from(participants.values()).filter((p) => p.userId !== user?.id);
 
   return (
-    <main className="flex min-h-screen flex-col gap-8 px-6 py-10">
+    <main className="flex min-h-screen flex-col gap-6 px-6 py-8">
       <header className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold tracking-tight">{meeting.title}</h1>
         <div className="flex items-center gap-2 text-sm text-muted">
@@ -138,39 +161,58 @@ export function MeetingRoomView({ code }: { code: string }) {
         </div>
       </header>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-muted">Participants ({participantList.length})</h2>
-        <ul className="flex flex-col gap-2">
-          {participantList.map((p) => (
-            <li
-              key={p.userId}
-              className="flex items-center justify-between rounded-lg border border-card-border bg-card px-4 py-3"
-            >
-              <span className="text-sm font-medium">
-                {p.displayName}
-                {p.userId === user?.id && <span className="text-muted"> (you)</span>}
-              </span>
-              <span className="text-xs uppercase tracking-wide text-muted">{p.role.replace("_", "-")}</span>
-            </li>
-          ))}
-        </ul>
+      {mediaError && <p className="text-sm text-danger">{mediaError}</p>}
+
+      <section className="grid flex-1 auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <VideoTile
+          stream={stream}
+          active={cameraEnabled}
+          displayName={user?.displayName ?? "You"}
+          mirrored
+          muted
+          label={`${user?.displayName ?? "You"} (you)`}
+        />
+        {remoteParticipants.map((p) => (
+          <VideoTile
+            key={p.userId}
+            stream={remoteStreams.get(p.userId) ?? null}
+            displayName={p.displayName}
+            label={p.displayName}
+          />
+        ))}
       </section>
 
-      <div className="mt-auto flex justify-center gap-3 pt-6">
+      <div className="flex justify-center gap-3 pt-2">
+        <MediaToggleButton
+          enabled={micEnabled}
+          onClick={toggleMic}
+          label={micEnabled ? "Mute microphone" : "Unmute microphone"}
+          enabledIcon={MicOnIcon}
+          disabledIcon={MicOffIcon}
+        />
+        <MediaToggleButton
+          enabled={cameraEnabled}
+          onClick={toggleCamera}
+          label={cameraEnabled ? "Turn off camera" : "Turn on camera"}
+          enabledIcon={CameraOnIcon}
+          disabledIcon={CameraOffIcon}
+        />
         <button
           onClick={handleLeave}
           disabled={leaving}
-          className="rounded-lg border border-input-border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-60 dark:hover:bg-white/10"
+          aria-label="Leave meeting"
+          title="Leave meeting"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-danger text-white transition-opacity hover:opacity-90 disabled:opacity-60"
         >
-          Leave meeting
+          {PhoneHangupIcon}
         </button>
         {isHost && (
           <button
             onClick={handleEnd}
             disabled={leaving}
-            className="rounded-lg bg-danger px-4 py-2.5 text-sm font-medium text-white transition-colors disabled:opacity-60"
+            className="rounded-full border border-danger-border bg-danger-bg px-4 text-sm font-medium text-danger transition-opacity hover:opacity-90 disabled:opacity-60"
           >
-            End meeting for everyone
+            End for everyone
           </button>
         )}
       </div>

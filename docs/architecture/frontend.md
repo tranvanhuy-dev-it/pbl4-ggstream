@@ -17,7 +17,7 @@ src/
 ├── lib/
 │   ├── api/          # REST client
 │   ├── websocket/     # signaling client
-│   └── webrtc/        # PeerConnectionManager (Milestone 4+)
+│   └── webrtc/        # PeerConnectionManager, ICE server config
 ├── stores/          # client state, added when a feature needs shared state
 └── types/           # shared TypeScript types
 ```
@@ -25,22 +25,27 @@ src/
 As with the backend, folders are created when the feature that needs them
 lands (see the milestone order in the root README), not pre-scaffolded
 empty. `features/auth` (Milestone 1), `features/meeting` / `features/lobby`
-(Milestone 2), and `lib/websocket` (Milestone 3) exist now; `lib/webrtc`
-lands with Milestone 4.
+(Milestone 2), `lib/websocket` (Milestone 3), and `lib/webrtc` (Milestone 4)
+all exist now.
+
+`hooks/` and `components/` hold anything used by **two or more** features —
+`useLocalMedia` and the video-tile/media-button UI started out
+lobby-specific (Milestone 2) but moved there once the room page (Milestone
+4) needed the same camera/mic capture and the same tile rendering for
+remote peers, not just the lobby preview.
 
 ## Meeting & lobby (Milestone 2)
 
 - `features/meeting/api/meetingApi.ts` — thin wrappers over `apiFetch` for
   create/get/join/leave/end/participants, each taking the JWT explicitly
   (no ambient auth state inside the API layer — the caller decides).
-- `features/lobby/hooks/useLocalMedia.ts` — requests
-  `getUserMedia({video:true,audio:true})` on mount, exposes the
-  `MediaStream` plus mic/camera toggle functions that just flip
-  `track.enabled` (no renegotiation involved, since there's no peer
-  connection yet — that's Milestone 4). This is the only piece of "real"
-  WebRTC-adjacent browser API in the app so far; `RTCPeerConnection` itself
-  doesn't appear until Milestone 4, layered on top of the same stream this
-  hook produces.
+- `hooks/useLocalMedia.ts` — requests `getUserMedia({video:true,audio:true})`
+  on mount, exposes the `MediaStream` plus mic/camera toggle functions that
+  just flip `track.enabled`. Used independently by the lobby (preview) and
+  the room (the actual call) — each gets its own `getUserMedia` call/stream,
+  the browser just reuses the cached permission grant so the room doesn't
+  re-prompt.
+
 ## Signaling (Milestone 3)
 
 - `lib/websocket/signalingClient.ts` — a thin wrapper around the native
@@ -60,6 +65,34 @@ lands with Milestone 4.
   at page-load"), then applies `PARTICIPANT_JOINED`/`PARTICIPANT_LEFT`
   events from the socket as deltas from that point forward — replacing the
   4s-polling placeholder from Milestone 2.
+
+## WebRTC (Milestone 4)
+
+- `lib/webrtc/PeerConnectionManager.ts` — owns
+  `Map<participantId, RTCPeerConnection>` (see
+  [networking/webrtc.md](../networking/webrtc.md#mesh-ready-by-construction)
+  for why it's built mesh-ready even though Milestone 4 only ever has one
+  entry in that map). Queues ICE candidates that arrive before the remote
+  description is set rather than dropping them — `addIceCandidate()` throws
+  if called too early, and the offer/answer round trip and ICE gathering
+  race each other over the network, so this isn't an edge case, it happens
+  routinely.
+- `lib/webrtc/iceServers.ts` — STUN-only for now
+  (`NEXT_PUBLIC_STUN_URL`, default Google's public STUN server); TURN
+  arrives Milestone 5.
+- `features/meeting/hooks/useWebRtcPeers.ts` — reconciles the manager
+  against the room's actual participant list (connect newcomers, tear down
+  anyone who left) and routes `WEBRTC_OFFER`/`WEBRTC_ANSWER`/
+  `ICE_CANDIDATE` envelopes from the signaling socket into the manager.
+  Decides who initiates each pairwise connection by comparing `userId`s
+  (smaller one offers) rather than reacting to "who joined when" — see
+  [networking/webrtc.md](../networking/webrtc.md#offer-glare-and-who-initiates)
+  for why that avoids offer glare with zero extra coordination messages.
+- `components/VideoTile.tsx` — renders one participant's stream; `mirrored`
+  is only ever `true` for the local self-view (the convention every video
+  call app follows so your own camera feels like a mirror), never for
+  remote peers — a mirrored remote video would show the other person
+  backwards.
 
 ## Why `page.tsx` stays thin
 

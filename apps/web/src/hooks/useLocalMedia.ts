@@ -5,9 +5,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export type MediaStatus = "idle" | "requesting_permission" | "ready" | "error";
 
 /**
- * Local camera/microphone preview for the lobby. Deliberately has nothing
- * to do with WebRTC peer connections — those come in Milestone 4+, layered
- * on top of the same MediaStream this hook produces.
+ * Local camera/microphone capture — used both for the lobby's preview and
+ * for the actual call in the room (each gets its own instance/permission
+ * grant via getUserMedia; the browser reuses the cached grant so the room's
+ * call doesn't re-prompt). Has nothing to do with WebRTC peer connections
+ * itself — those are layered on top of the MediaStream this hook produces,
+ * see lib/webrtc/PeerConnectionManager.
  */
 export function useLocalMedia() {
   const [status, setStatus] = useState<MediaStatus>("idle");

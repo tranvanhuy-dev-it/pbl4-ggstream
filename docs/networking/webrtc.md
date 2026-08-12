@@ -1,13 +1,56 @@
 # WebRTC
 
-**Status: planned, Milestone 4 (1:1) → Milestone 6 (Mesh) → Milestone 11 (SFU).**
+**Status: 1:1 calling implemented (Milestone 4). Mesh (3+ participants) is
+Milestone 6, SFU is Milestone 11 — see below for why the same code already
+supports both.**
 
-This document will explain, with references to this project's actual code:
+## SDP offer/answer, ICE, and why media skips the backend
 
-- SDP offer/answer negotiation
-- RTP/RTCP media transport, DTLS-SRTP encryption
-- ICE candidate gathering and connectivity checks
-- why media never routes through the Spring Boot process
+`RTCPeerConnection` negotiates a call in three interleaved steps, all
+happening client-side in `lib/webrtc/PeerConnectionManager`:
+
+1. **SDP offer/answer** — each side describes its media capabilities
+   (codecs, tracks) as an SDP blob. One side calls `createOffer()`, sends it
+   to the other over signaling; the other calls `setRemoteDescription()`
+   then `createAnswer()`, sends that back. Once both sides have called
+   `setLocalDescription`/`setRemoteDescription` with matching
+   offer/answer, the connection has agreed on *what* to send.
+2. **ICE candidate gathering** — in parallel, each browser asks the OS for
+   every network path it might be reachable on (local LAN address, and via
+   STUN, its public-facing address behind NAT — see
+   [ice-stun-turn.md](./ice-stun-turn.md)) and sends each one to the other
+   side as it's discovered (`onicecandidate`). This decides *how* the two
+   browsers actually reach each other.
+3. Once ICE finds a working candidate pair, a **DTLS handshake** negotiates
+   encryption keys for the media itself (**SRTP** — encrypted RTP), then
+   audio/video **RTP** packets flow directly between the two browsers.
+
+The Spring Boot backend participates in exactly step 1 and the candidate
+exchange in step 2 — as a dumb relay (`WEBRTC_OFFER`/`WEBRTC_ANSWER`/
+`ICE_CANDIDATE`, routed by `targetId`, see
+[signaling.md](./signaling.md)) — and never sees the DTLS handshake or any
+RTP packet. That's not an optimization, it's the whole point of using
+WebRTC instead of routing media through the app server: the backend would
+otherwise have to handle N× the bandwidth of every call in the system.
+
+## Offer glare and who initiates
+
+If both sides of a pair called `createOffer()` at the same moment (e.g.
+both react to seeing each other join at once), you'd get two competing
+offers — "glare". `useWebRtcPeers` avoids this without any extra
+coordination message: whichever participant has the lexicographically
+smaller `userId` always initiates, deterministically, for every pair. The
+other side just waits to receive an offer and answers it.
+
+## Mesh-ready by construction
+
+`PeerConnectionManager` was built as `Map<participantId, RTCPeerConnection>`
+from the start — Milestone 4 only ever populates that map with one entry
+(the other participant in a 1:1 call), but the class itself doesn't know
+or care how many peers it's managing. Milestone 6 doesn't change this
+class at all; it only changes how many participants are in the room the
+existing reconciliation logic (`useWebRtcPeers`, connect-new/disconnect-
+gone based on the room's participant list) is already watching.
 
 ## Mesh vs SFU
 

@@ -1,0 +1,107 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { PeerConnectionManager } from "@/lib/webrtc/PeerConnectionManager";
+import { getIceServers } from "@/lib/webrtc/iceServers";
+import type { SignalingEnvelope, SignalingMessageType } from "@/lib/websocket/types";
+
+type SendFn = (message: { type: SignalingMessageType; targetId?: string; payload?: unknown }) => void;
+
+/**
+ * Owns the PeerConnectionManager for the room and reconciles it against who
+ * is actually present: whenever `peerIds` changes, connects to anyone new
+ * and tears down anyone who left. Offer/answer/ICE routing is
+ * event-driven (via handleEnvelope); who's-in-the-room is state-driven (via
+ * the peerIds prop) — mixing those two models for the same data would be
+ * more error-prone than keeping them separate.
+ *
+ * Glare avoidance: if both sides of a pair tried to createOffer()
+ * simultaneously, you'd get two competing offers. Instead, whichever
+ * participant has the lexicographically smaller userId is always the one
+ * who initiates — deterministic, requires no extra coordination message,
+ * and every peer computes the same answer independently.
+ */
+export function useWebRtcPeers(
+  myUserId: string | null,
+  localStream: MediaStream | null,
+  peerIds: string[],
+  send: SendFn,
+) {
+  const managerRef = useRef<PeerConnectionManager | null>(null);
+  const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
+
+  useEffect(() => {
+    if (!localStream) return;
+
+    const manager = new PeerConnectionManager({
+      iceServers: getIceServers(),
+      localStream,
+      onRemoteStream: (participantId, stream) => {
+        setRemoteStreams((prev) => new Map(prev).set(participantId, stream));
+      },
+      onIceCandidate: (participantId, candidate) => {
+        send({ type: "ICE_CANDIDATE", targetId: participantId, payload: candidate });
+      },
+    });
+    managerRef.current = manager;
+
+    return () => {
+      manager.closeAll();
+      managerRef.current = null;
+      setRemoteStreams(new Map());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localStream]);
+
+  useEffect(() => {
+    const manager = managerRef.current;
+    if (!manager || !myUserId) return;
+
+    for (const peerId of peerIds) {
+      if (peerId === myUserId || manager.hasPeer(peerId)) continue;
+      if (myUserId < peerId) {
+        manager.createOffer(peerId).then((offer) => {
+          send({ type: "WEBRTC_OFFER", targetId: peerId, payload: offer });
+        });
+      }
+      // else: wait for their offer — see glare-avoidance note above.
+    }
+
+    for (const connectedId of manager.connectedPeerIds()) {
+      if (!peerIds.includes(connectedId)) {
+        manager.removePeer(connectedId);
+        setRemoteStreams((prev) => {
+          const next = new Map(prev);
+          next.delete(connectedId);
+          return next;
+        });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [peerIds, myUserId, localStream]);
+
+  const handleEnvelope = useCallback(
+    (envelope: SignalingEnvelope) => {
+      const manager = managerRef.current;
+      const senderId = envelope.senderId;
+      if (!manager || !senderId) return;
+
+      switch (envelope.type) {
+        case "WEBRTC_OFFER":
+          manager.handleOffer(senderId, envelope.payload as RTCSessionDescriptionInit).then((answer) => {
+            send({ type: "WEBRTC_ANSWER", targetId: senderId, payload: answer });
+          });
+          break;
+        case "WEBRTC_ANSWER":
+          manager.handleAnswer(senderId, envelope.payload as RTCSessionDescriptionInit);
+          break;
+        case "ICE_CANDIDATE":
+          manager.addIceCandidate(senderId, envelope.payload as RTCIceCandidateInit);
+          break;
+      }
+    },
+    [send],
+  );
+
+  return { remoteStreams, handleEnvelope };
+}
