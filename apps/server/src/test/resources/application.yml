@@ -19,6 +19,12 @@ app:
     heartbeat-interval-seconds: 1
     heartbeat-timeout-seconds: 4
     heartbeat-check-interval-ms: 300
+  turn:
+    host: turn.test.invalid
+    port: 3478
+    secret: test-turn-shared-secret
+    credential-ttl-seconds: 3600
+    stun-url: stun:stun.l.google.com:19302
 
 # NOTE: this file fully replaces src/main/resources/application.yml on the
 # test classpath (Spring Boot loads the first "application.yml" it finds —

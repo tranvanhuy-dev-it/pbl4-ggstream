@@ -1,6 +1,10 @@
 # ICE, STUN, TURN, NAT Traversal
 
-**Status: STUN implemented (Milestone 4). TURN is Milestone 5.**
+**Status: STUN implemented (Milestone 4). TURN credential issuance is
+implemented (Milestone 5) but no Coturn server is deployed in this
+project's dev environment yet — see
+[turn-setup.md](./turn-setup.md#status-backendfrontend-turn-credential-plumbing-is-implemented-and-active)
+for why that's a deliberate, not-yet-needed step.**
 
 ## The problem: NAT
 
@@ -48,10 +52,16 @@ that NAT combination. ICE always tries host and server-reflexive candidates
 first; a relay candidate is the fallback of last resort, not a replacement
 for STUN.
 
-## What Milestone 5 adds
+## TURN credentials (Milestone 5)
 
-TURN credentials are never static — the browser will fetch short-lived,
-backend-issued temporary credentials from `GET /api/v1/rtc/ice-servers` so
-the TURN shared secret itself never reaches the client. See
-[turn-setup.md](./turn-setup.md) for the Coturn install/config guide once
-that milestone starts.
+TURN credentials are never static — the browser fetches short-lived,
+backend-issued temporary credentials from `GET /api/v1/rtc/ice-servers`
+(`rtc.application.TurnCredentialService`) so the TURN shared secret itself
+never reaches the client. The credential is
+`Base64(HMAC-SHA1(TURN_SECRET, "<expiryUnixTimestamp>:<userId>"))` — Coturn's
+standard `use-auth-secret` REST API auth mode, which lets Coturn verify a
+credential by recomputing the same HMAC against its own copy of the secret,
+with no shared credential database between the two services. If
+`TURN_HOST`/`TURN_SECRET` aren't configured, the endpoint returns
+STUN-only rather than erroring — see
+[turn-setup.md](./turn-setup.md) for the Coturn install/config guide.

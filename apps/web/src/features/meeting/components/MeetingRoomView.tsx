@@ -84,6 +84,7 @@ export function MeetingRoomView({ code }: { code: string }) {
     stream,
     peerIds,
     send,
+    token,
   );
 
   function handleSignalingMessage(envelope: SignalingEnvelope) {

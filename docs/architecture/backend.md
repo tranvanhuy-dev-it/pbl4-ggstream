@@ -19,8 +19,9 @@ com.project.meet
 ├── meeting/           # Meeting entity, create/get/end use cases, code generator
 ├── participant/       # MeetingParticipant entity, join/leave/list use cases
 ├── signaling/         # WebSocket handler, envelope routing, room concurrency, heartbeat
+├── rtc/               # GET /rtc/ice-servers — TURN credential generation
 ├── chat/              # Milestone 7
-├── media/             # media abstraction (Mesh → SFU), Milestone 4+
+├── media/             # media abstraction (Mesh → SFU), Milestone 6+
 └── MeetApplication.java
 ```
 
@@ -55,8 +56,9 @@ We deliberately do **not** wrap `spring.datasource.*` in a custom
 that typed configuration, and duplicating it would just be indirection with
 no benefit. Custom `@ConfigurationProperties` records are added only for
 settings Spring Boot doesn't already model: `CorsProperties`, `JwtProperties`,
-`WebSocketProperties` (heartbeat interval/timeout) now, `TurnProperties`
-(Milestone 5).
+`WebSocketProperties` (heartbeat interval/timeout), `TurnProperties`
+(TURN host/port/shared-secret/credential-TTL, plus the STUN URL — grouped
+together since `GET /rtc/ice-servers` always returns both).
 
 No `System.getenv(...)` calls anywhere in application code.
 
@@ -212,3 +214,24 @@ as a query parameter instead and `/ws/**` is excluded from the normal
 header-based auth path in `SecurityConfig`. See
 [networking/signaling.md](../networking/signaling.md#authentication-on-connect)
 and [api/websocket-protocol.md](../api/websocket-protocol.md).
+
+## TURN credentials (Milestone 5)
+
+`GET /api/v1/rtc/ice-servers` (`rtc` package) is the only place the TURN
+shared secret (`TURN_SECRET`) is ever read — `TurnCredentialService` derives
+a short-lived, per-user credential from it
+(`Base64(HMAC-SHA1(secret, "<expiryEpochSeconds>:<userId>"))`) and that's
+the only thing that ever reaches the response body. This matches Coturn's
+built-in `use-auth-secret` REST API auth mode exactly, so there's no
+custom protocol to keep in sync between the two services, and no shared
+credential database — Coturn independently recomputes the same HMAC
+against its own copy of the secret to verify a credential and read back the
+embedded expiry.
+
+`GetIceServersUseCase` degrades to STUN-only (no error) when
+`TurnProperties.isTurnConfigured()` is false — i.e. `TURN_HOST`/`TURN_SECRET`
+are unset — so the endpoint, and every caller of it, works identically
+whether or not a Coturn server has actually been deployed yet. See
+[networking/ice-stun-turn.md](../networking/ice-stun-turn.md#turn-credentials-milestone-5)
+and [networking/turn-setup.md](../networking/turn-setup.md) for the
+Coturn side of this.

@@ -64,7 +64,29 @@ Host-only — `403 NOT_MEETING_HOST` otherwise. Marks the meeting `ENDED` and cl
 
 ### `GET /api/v1/meetings/{meetingId}/participants`
 
-Lists currently-active participants (`leftAt IS NULL`) — used by the room page, currently via polling (see [architecture/backend.md](../architecture/backend.md#concurrency-model-introduced-milestone-3) for why this becomes a WebSocket push in Milestone 3).
+Lists currently-active participants (`leftAt IS NULL`) — the room page
+calls this once to seed its roster on load, then applies
+`PARTICIPANT_JOINED`/`PARTICIPANT_LEFT` WebSocket events as deltas from
+that point forward (see [networking/signaling.md](../networking/signaling.md)).
+
+### `GET /api/v1/rtc/ice-servers`
+
+Requires `Authorization: Bearer <accessToken>`. Returns STUN and (if
+`TURN_HOST`/`TURN_SECRET` are configured) TURN ICE server entries, the
+latter with a freshly-generated short-lived credential
+(`rtc.application.TurnCredentialService` — HMAC-SHA1 of the shared secret,
+Coturn's `use-auth-secret` REST API auth convention). Degrades to STUN-only,
+not an error, when TURN isn't configured. See
+[networking/ice-stun-turn.md](../networking/ice-stun-turn.md#turn-credentials-milestone-5).
+
+```json
+{
+  "iceServers": [
+    { "urls": ["stun:stun.l.google.com:19302"], "username": null, "credential": null },
+    { "urls": ["turn:host:3478?transport=udp", "turn:host:3478?transport=tcp"], "username": "1786...:uuid", "credential": "base64..." }
+  ]
+}
+```
 
 ## Authentication
 
@@ -93,12 +115,6 @@ Every non-2xx response from `/api/v1/**` uses the shape documented in
 ```
 
 `violations` is only present for validation failures (400).
-
-## Planned endpoints
-
-```
-GET  /api/v1/rtc/ice-servers            Milestone 5 (temporary TURN credentials)
-```
 
 DTOs are defined per-feature under `<feature>/api/`; JPA entities are never
 returned directly from a controller.

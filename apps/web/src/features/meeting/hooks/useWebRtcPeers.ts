@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PeerConnectionManager } from "@/lib/webrtc/PeerConnectionManager";
-import { getIceServers } from "@/lib/webrtc/iceServers";
+import { fetchIceServers } from "@/lib/webrtc/iceServers";
 import type { SignalingEnvelope, SignalingMessageType } from "@/lib/websocket/types";
 
 type SendFn = (message: { type: SignalingMessageType; targetId?: string; payload?: unknown }) => void;
@@ -26,32 +26,48 @@ export function useWebRtcPeers(
   localStream: MediaStream | null,
   peerIds: string[],
   send: SendFn,
+  token: string | null,
 ) {
   const managerRef = useRef<PeerConnectionManager | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
+  // ICE server fetch is async, so manager creation can't just be a synchronous
+  // ref assignment the reconcile effect below picks up for free — setting a
+  // ref doesn't trigger a re-render, so without this the reconcile effect
+  // would only run reconciliation for peerIds changes that happen to occur
+  // *after* the fetch resolves, missing anyone already in peerIds at that point.
+  const [managerReady, setManagerReady] = useState(false);
 
   useEffect(() => {
-    if (!localStream) return;
+    if (!localStream || !token) return;
+    let cancelled = false;
+    setManagerReady(false);
 
-    const manager = new PeerConnectionManager({
-      iceServers: getIceServers(),
-      localStream,
-      onRemoteStream: (participantId, stream) => {
-        setRemoteStreams((prev) => new Map(prev).set(participantId, stream));
-      },
-      onIceCandidate: (participantId, candidate) => {
-        send({ type: "ICE_CANDIDATE", targetId: participantId, payload: candidate });
-      },
+    fetchIceServers(token).then((iceServers) => {
+      if (cancelled) return;
+
+      const manager = new PeerConnectionManager({
+        iceServers,
+        localStream,
+        onRemoteStream: (participantId, stream) => {
+          setRemoteStreams((prev) => new Map(prev).set(participantId, stream));
+        },
+        onIceCandidate: (participantId, candidate) => {
+          send({ type: "ICE_CANDIDATE", targetId: participantId, payload: candidate });
+        },
+      });
+      managerRef.current = manager;
+      setManagerReady(true);
     });
-    managerRef.current = manager;
 
     return () => {
-      manager.closeAll();
+      cancelled = true;
+      managerRef.current?.closeAll();
       managerRef.current = null;
+      setManagerReady(false);
       setRemoteStreams(new Map());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [localStream]);
+  }, [localStream, token]);
 
   useEffect(() => {
     const manager = managerRef.current;
@@ -78,7 +94,7 @@ export function useWebRtcPeers(
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [peerIds, myUserId, localStream]);
+  }, [peerIds, myUserId, localStream, managerReady]);
 
   const handleEnvelope = useCallback(
     (envelope: SignalingEnvelope) => {

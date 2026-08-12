@@ -77,9 +77,12 @@ remote peers, not just the lobby preview.
   if called too early, and the offer/answer round trip and ICE gathering
   race each other over the network, so this isn't an edge case, it happens
   routinely.
-- `lib/webrtc/iceServers.ts` — STUN-only for now
-  (`NEXT_PUBLIC_STUN_URL`, default Google's public STUN server); TURN
-  arrives Milestone 5.
+- `lib/webrtc/iceServers.ts` — `fetchIceServers(token)` calls
+  `GET /api/v1/rtc/ice-servers` for STUN + (if the backend has TURN
+  configured) short-lived TURN credentials, rather than hardcoding either
+  client-side; falls back to a bare public STUN entry
+  (`NEXT_PUBLIC_STUN_URL`) if that request itself fails, so a transient API
+  hiccup degrades a call's NAT-traversal options instead of blocking it.
 - `features/meeting/hooks/useWebRtcPeers.ts` — reconciles the manager
   against the room's actual participant list (connect newcomers, tear down
   anyone who left) and routes `WEBRTC_OFFER`/`WEBRTC_ANSWER`/
