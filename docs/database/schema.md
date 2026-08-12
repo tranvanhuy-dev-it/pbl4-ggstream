@@ -19,8 +19,8 @@ migrations without changing anything else in the architecture.
 
 ## Tables
 
-`users`, `meetings`, and `meeting_participants` are implemented. Only
-`chat_messages` (Milestone 7) is still planned.
+`users`, `meetings`, `meeting_participants`, and `chat_messages` are all
+implemented.
 
 ### `users`
 
@@ -66,16 +66,29 @@ meeting's full attendance history is reconstructable from this table alone.
 `meetingId`/`userId` combined with `leftAt IS NULL` identifies the *current*
 active session for a user in a meeting.
 
-### `chat_messages` (Milestone 7)
+### `chat_messages`
 
-Persisted chat history: `id`, `meeting_id`, `sender_participant_id`,
-`body`, `created_at`.
+| column      | type          | notes             |
+|-------------|---------------|--------------------|
+| id          | UUID (PK)     |                    |
+| meeting_id  | UUID (FK → meetings) |             |
+| sender_id   | UUID (FK → users) |                 |
+| body        | text (≤4000)  |                    |
+| created_at  | timestamp     |                    |
+
+References `users` directly rather than `meeting_participants` — a chat
+message's authorship should survive the sender leaving and rejoining
+(which creates a new `meeting_participants` row each time, see above), and
+querying "who sent this" only ever needs the user, not which specific
+session they were in when they sent it.
 
 ## What is *not* persisted
 
 Runtime-only meeting state — current mic/camera toggle, active WebSocket
-session id, ICE candidates, peer connection state — lives in an in-memory
-`MeetingRuntime` on the backend, not in PostgreSQL. These values change many
-times per second per participant and have no value once a meeting ends; only
-the participant's *joined_at* / *left_at* / final role is worth persisting.
-See [architecture/backend.md](../architecture/backend.md#concurrency-model-introduced-milestone-3).
+session id, ICE candidates, peer connection state, the waiting room queue —
+lives in an in-memory `MeetingRuntime` on the backend, not in PostgreSQL.
+These values change many times per second per participant (or, for the
+waiting room, only matter while the meeting is actually live) and have no
+value once a meeting ends; only the participant's *joined_at* / *left_at* /
+final role is worth persisting. See
+[architecture/backend.md](../architecture/backend.md#concurrency-model-introduced-milestone-3).

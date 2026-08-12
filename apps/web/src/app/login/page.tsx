@@ -3,7 +3,7 @@ import { LoginForm } from "@/features/auth/components/LoginForm";
 
 export default function LoginPage() {
   return (
-    <AuthLayout title="Welcome back" subtitle="Sign in to continue to your meetings">
+    <AuthLayout title="Chào mừng trở lại" subtitle="Đăng nhập để tiếp tục vào các cuộc họp của bạn">
       <LoginForm />
     </AuthLayout>
   );

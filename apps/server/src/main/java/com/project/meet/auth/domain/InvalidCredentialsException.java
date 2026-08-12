@@ -6,6 +6,6 @@ import org.springframework.http.HttpStatus;
 public class InvalidCredentialsException extends ApiException {
 
 	public InvalidCredentialsException() {
-		super("INVALID_CREDENTIALS", HttpStatus.UNAUTHORIZED, "Email or password is incorrect");
+		super("INVALID_CREDENTIALS", HttpStatus.UNAUTHORIZED, "Email hoặc mật khẩu không đúng");
 	}
 }

@@ -26,12 +26,12 @@ public class GetMeetingUseCase {
 	@Transactional(readOnly = true)
 	public MeetingResponse byCode(String code) {
 		Meeting meeting = meetingRepository.findByCode(code)
-				.orElseThrow(() -> new ResourceNotFoundException("MEETING_NOT_FOUND", "No meeting found for code '" + code + "'"));
+				.orElseThrow(() -> new ResourceNotFoundException("MEETING_NOT_FOUND", "Không tìm thấy cuộc họp với mã '" + code + "'"));
 		return MeetingResponse.from(meeting);
 	}
 
 	private Meeting findMeeting(UUID meetingId) {
 		return meetingRepository.findById(meetingId)
-				.orElseThrow(() -> new ResourceNotFoundException("MEETING_NOT_FOUND", "Meeting not found"));
+				.orElseThrow(() -> new ResourceNotFoundException("MEETING_NOT_FOUND", "Không tìm thấy cuộc họp"));
 	}
 }

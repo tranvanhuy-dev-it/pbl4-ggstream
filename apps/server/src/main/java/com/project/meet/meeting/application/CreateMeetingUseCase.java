@@ -29,7 +29,7 @@ public class CreateMeetingUseCase {
 	@Transactional
 	public MeetingResponse execute(UUID hostUserId, CreateMeetingRequest request) {
 		User host = userRepository.findById(hostUserId)
-				.orElseThrow(() -> new ResourceNotFoundException("USER_NOT_FOUND", "User no longer exists"));
+				.orElseThrow(() -> new ResourceNotFoundException("USER_NOT_FOUND", "Người dùng không còn tồn tại"));
 
 		MeetingAccessType accessType = request.accessType() != null ? request.accessType() : MeetingAccessType.PUBLIC;
 

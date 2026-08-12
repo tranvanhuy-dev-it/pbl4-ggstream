@@ -15,7 +15,7 @@ type SendFn = (message: { type: SignalingMessageType; targetId?: string; payload
  * the peerIds prop) — mixing those two models for the same data would be
  * more error-prone than keeping them separate.
  *
- * Glare avoidance: if both sides of a pair tried to createOffer()
+ * Glare avoidance: if both sides of a pair tried to initiate a connection
  * simultaneously, you'd get two competing offers. Instead, whichever
  * participant has the lexicographically smaller userId is always the one
  * who initiates — deterministic, requires no extra coordination message,
@@ -30,6 +30,8 @@ export function useWebRtcPeers(
 ) {
   const managerRef = useRef<PeerConnectionManager | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
+  const [remoteScreenStreams, setRemoteScreenStreams] = useState<Map<string, MediaStream>>(new Map());
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
   // ICE server fetch is async, so manager creation can't just be a synchronous
   // ref assignment the reconcile effect below picks up for free — setting a
   // ref doesn't trigger a re-render, so without this the reconcile effect
@@ -51,8 +53,19 @@ export function useWebRtcPeers(
         onRemoteStream: (participantId, stream) => {
           setRemoteStreams((prev) => new Map(prev).set(participantId, stream));
         },
+        onRemoteScreenStream: (participantId, stream) => {
+          setRemoteScreenStreams((prev) => {
+            const next = new Map(prev);
+            if (stream) next.set(participantId, stream);
+            else next.delete(participantId);
+            return next;
+          });
+        },
         onIceCandidate: (participantId, candidate) => {
           send({ type: "ICE_CANDIDATE", targetId: participantId, payload: candidate });
+        },
+        onOffer: (participantId, offer) => {
+          send({ type: "WEBRTC_OFFER", targetId: participantId, payload: offer });
         },
       });
       managerRef.current = manager;
@@ -65,6 +78,8 @@ export function useWebRtcPeers(
       managerRef.current = null;
       setManagerReady(false);
       setRemoteStreams(new Map());
+      setRemoteScreenStreams(new Map());
+      setIsScreenSharing(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localStream, token]);
@@ -76,9 +91,7 @@ export function useWebRtcPeers(
     for (const peerId of peerIds) {
       if (peerId === myUserId || manager.hasPeer(peerId)) continue;
       if (myUserId < peerId) {
-        manager.createOffer(peerId).then((offer) => {
-          send({ type: "WEBRTC_OFFER", targetId: peerId, payload: offer });
-        });
+        manager.connect(peerId);
       }
       // else: wait for their offer — see glare-avoidance note above.
     }
@@ -87,6 +100,11 @@ export function useWebRtcPeers(
       if (!peerIds.includes(connectedId)) {
         manager.removePeer(connectedId);
         setRemoteStreams((prev) => {
+          const next = new Map(prev);
+          next.delete(connectedId);
+          return next;
+        });
+        setRemoteScreenStreams((prev) => {
           const next = new Map(prev);
           next.delete(connectedId);
           return next;
@@ -119,5 +137,15 @@ export function useWebRtcPeers(
     [send],
   );
 
-  return { remoteStreams, handleEnvelope };
+  const startScreenShare = useCallback(async (stream: MediaStream) => {
+    await managerRef.current?.startScreenShare(stream);
+    setIsScreenSharing(true);
+  }, []);
+
+  const stopScreenShare = useCallback(() => {
+    managerRef.current?.stopScreenShare();
+    setIsScreenSharing(false);
+  }, []);
+
+  return { remoteStreams, remoteScreenStreams, handleEnvelope, startScreenShare, stopScreenShare, isScreenSharing };
 }

@@ -30,7 +30,7 @@ public class GlobalExceptionHandler {
 				.map(fe -> new ApiError.FieldViolation(fe.getField(), fe.getDefaultMessage()))
 				.toList();
 		return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-				.body(ApiError.of("VALIDATION_FAILED", "Request validation failed", requestId(), violations));
+				.body(ApiError.of("VALIDATION_FAILED", "Dữ liệu gửi lên không hợp lệ", requestId(), violations));
 	}
 
 	@ExceptionHandler(ConstraintViolationException.class)
@@ -42,14 +42,14 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(AccessDeniedException.class)
 	public ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException ex) {
 		return ResponseEntity.status(HttpStatus.FORBIDDEN)
-				.body(ApiError.of("ACCESS_DENIED", "You do not have permission to perform this action", requestId()));
+				.body(ApiError.of("ACCESS_DENIED", "Bạn không có quyền thực hiện hành động này", requestId()));
 	}
 
 	@ExceptionHandler(Exception.class)
 	public ResponseEntity<ApiError> handleUnexpected(Exception ex) {
 		log.error("Unhandled exception [requestId={}]", requestId(), ex);
 		return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-				.body(ApiError.of("INTERNAL_ERROR", "An unexpected error occurred", requestId()));
+				.body(ApiError.of("INTERNAL_ERROR", "Đã xảy ra lỗi không xác định", requestId()));
 	}
 
 	private String requestId() {

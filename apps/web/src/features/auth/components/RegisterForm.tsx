@@ -26,7 +26,7 @@ export function RegisterForm() {
       await register({ email, password, displayName });
       router.push("/");
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : "Something went wrong");
+      setError(err instanceof ApiClientError ? err.message : "Đã xảy ra lỗi, vui lòng thử lại");
     } finally {
       setSubmitting(false);
     }
@@ -36,7 +36,7 @@ export function RegisterForm() {
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <TextField
         id="displayName"
-        label="Display name"
+        label="Tên hiển thị"
         type="text"
         autoComplete="name"
         required
@@ -54,7 +54,7 @@ export function RegisterForm() {
       />
       <TextField
         id="password"
-        label="Password"
+        label="Mật khẩu"
         type="password"
         autoComplete="new-password"
         required
@@ -62,15 +62,15 @@ export function RegisterForm() {
         value={password}
         onChange={(e) => setPassword(e.target.value)}
       />
-      <p className="-mt-2 text-xs text-muted">At least 8 characters.</p>
+      <p className="-mt-2 text-xs text-muted">Tối thiểu 8 ký tự.</p>
       {error && <ErrorAlert message={error} />}
-      <SubmitButton loading={submitting} loadingLabel="Creating account…">
-        Create account
+      <SubmitButton loading={submitting} loadingLabel="Đang tạo tài khoản…">
+        Tạo tài khoản
       </SubmitButton>
       <p className="text-center text-sm text-muted">
-        Already have an account?{" "}
+        Đã có tài khoản?{" "}
         <Link href="/login" className="font-medium text-accent hover:underline">
-          Sign in
+          Đăng nhập
         </Link>
       </p>
     </form>

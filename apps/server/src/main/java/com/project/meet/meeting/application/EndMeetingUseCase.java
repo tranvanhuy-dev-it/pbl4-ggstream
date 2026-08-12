@@ -27,7 +27,7 @@ public class EndMeetingUseCase {
 	@Transactional
 	public MeetingResponse execute(UUID meetingId, UUID requesterUserId) {
 		Meeting meeting = meetingRepository.findById(meetingId)
-				.orElseThrow(() -> new ResourceNotFoundException("MEETING_NOT_FOUND", "Meeting not found"));
+				.orElseThrow(() -> new ResourceNotFoundException("MEETING_NOT_FOUND", "Không tìm thấy cuộc họp"));
 
 		if (!meeting.isHostedBy(requesterUserId)) {
 			throw new NotMeetingHostException();

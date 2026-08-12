@@ -31,9 +31,10 @@ sending.
 
 `targetId` is null for broadcast events (e.g. `PARTICIPANT_JOINED`) and set
 for point-to-point signaling relay (`WEBRTC_OFFER`, `WEBRTC_ANSWER`,
-`ICE_CANDIDATE`) — the server routes any envelope with a `targetId` only to
-that participant's session, and broadcasts everything else to the rest of
-the room.
+`ICE_CANDIDATE`, `HOST_MUTE_PARTICIPANT`, `HOST_REMOVE_PARTICIPANT`,
+`PARTICIPANT_APPROVED`, `PARTICIPANT_REJECTED`) — the server routes any
+envelope with a `targetId` only to that participant's session, and
+broadcasts everything else to the rest of the room.
 
 ## Event types
 
@@ -42,22 +43,46 @@ MEETING_JOIN / MEETING_LEAVE        — accepted, but a no-op: presence is
                                        driven by the socket connecting/
                                        closing, not by these messages
 PARTICIPANT_JOINED / PARTICIPANT_LEFT
-WEBRTC_OFFER / WEBRTC_ANSWER / ICE_CANDIDATE   — relayed, not yet sent by
-                                                   any client (Milestone 4)
-MIC_STATE_CHANGED / CAMERA_STATE_CHANGED       — relayed, not yet sent (Milestone 4+)
-SCREEN_SHARE_STARTED / SCREEN_SHARE_STOPPED    — relayed, not yet sent (Milestone 7)
-CHAT_MESSAGE                                    — relayed, not yet sent (Milestone 7)
-PARTICIPANT_WAITING / PARTICIPANT_APPROVED / PARTICIPANT_REJECTED  — Milestone 7
-HOST_MUTE_PARTICIPANT / HOST_REMOVE_PARTICIPANT                    — Milestone 7
-PING / PONG                          — implemented; heartbeat
-ERROR                                — implemented; malformed-message reports
+WEBRTC_OFFER / WEBRTC_ANSWER / ICE_CANDIDATE   — relayed by targetId (Milestone 4+)
+SCREEN_SHARE_STARTED / SCREEN_SHARE_STOPPED    — broadcast; UI-only signal,
+                                                   the actual screen track is
+                                                   a WebRTC renegotiation,
+                                                   not sent over this socket
+CHAT_MESSAGE                         — persisted (see chat_messages) then
+                                        broadcast to everyone including the
+                                        sender — the server's copy (with its
+                                        assigned id/timestamp) is the single
+                                        source of truth, not a client-side
+                                        optimistic render
+PARTICIPANT_WAITING                  — server → the waiting client (an ack)
+                                        and server → every host in the room
+                                        (a request to act on); see
+                                        signaling.md#waiting-room-milestone-7
+PARTICIPANT_APPROVED / PARTICIPANT_REJECTED  — host → server (with
+                                        targetId = the waiting user) to
+                                        decide; server → that user to notify
+                                        the outcome. Same type both
+                                        directions, reused rather than
+                                        introducing a separate "decision"
+                                        message type
+HOST_MUTE_PARTICIPANT                — host → server → targeted participant;
+                                        server checks the sender actually
+                                        has HOST role before relaying
+HOST_REMOVE_PARTICIPANT              — host → server, which closes the
+                                        target's WebSocket session directly
+                                        (not a plain relay) — the target's
+                                        own afterConnectionClosed cleanup
+                                        then broadcasts PARTICIPANT_LEFT
+                                        normally
+PING / PONG                          — heartbeat
+ERROR                                — malformed-message / invalid-chat-message reports
 ```
 
-Everything not yet sent by a client still routes correctly today — the
-server's relay logic (broadcast vs. point-to-point-by-`targetId`) doesn't
-special-case message types beyond `PING`/`MEETING_JOIN`/`MEETING_LEAVE`, so
-Milestone 4+ features land by having a client start sending these types,
-not by changing server routing.
+Everything not yet sent by a client still routes correctly — the server's
+default relay logic (broadcast vs. point-to-point-by-`targetId`) doesn't
+special-case message types beyond the ones listed above with custom
+handling, so future features land by having a client start sending a new
+type, not by changing server routing.
 
 Media (audio/video/screen RTP) never travels over this WebSocket — only
 signaling and application events. See

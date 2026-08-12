@@ -26,9 +26,9 @@ export function BackendStatus() {
   }, []);
 
   const label = {
-    checking: "Checking backend…",
-    up: "Backend connected",
-    down: "Backend unreachable",
+    checking: "Đang kiểm tra máy chủ…",
+    up: "Đã kết nối máy chủ",
+    down: "Không thể kết nối máy chủ",
   }[status];
 
   const dotColor = {

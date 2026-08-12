@@ -44,7 +44,7 @@ end to end; the frontend doesn't call it beyond session rehydration on load.
 
 ### `POST /api/v1/meetings`
 
-Body: `{ "title", "accessType"? }` (`accessType` defaults to `PUBLIC`; `INVITED`/`APPROVAL_REQUIRED` are stored but not yet enforced — that's the Milestone 7 waiting room). Returns `201` with a `MeetingResponse`, including a generated join code (`abc-defg-hij` style, collision-checked against the DB). The caller becomes `hostId` but is **not** automatically a participant — they still call `/join` like anyone else, which is what actually creates their `meeting_participants` row and (for the host specifically) flips the meeting `CREATED → ACTIVE`.
+Body: `{ "title", "accessType"? }` (`accessType` defaults to `PUBLIC`; `APPROVAL_REQUIRED` is enforced at the signaling layer — see [networking/signaling.md](../networking/signaling.md#waiting-room-milestone-7) — `INVITED` is stored but not yet enforced). Returns `201` with a `MeetingResponse`, including a generated join code (`abc-defg-hij` style, collision-checked against the DB). The caller becomes `hostId` but is **not** automatically a participant — they still call `/join` like anyone else, which is what actually creates their `meeting_participants` row and (for the host specifically) flips the meeting `CREATED → ACTIVE`.
 
 ### `GET /api/v1/meetings/{meetingId}` / `GET /api/v1/meetings/code/{code}`
 
@@ -88,6 +88,15 @@ not an error, when TURN isn't configured. See
 }
 ```
 
+### `GET /api/v1/meetings/{meetingId}/messages`
+
+Returns full chat history for a meeting, oldest first — the room page
+fetches this once on load, then applies live `CHAT_MESSAGE` WebSocket
+events as deltas (see [api/websocket-protocol.md](./websocket-protocol.md)).
+`404 MEETING_NOT_FOUND` if the meeting doesn't exist. Sending a message
+happens over the WebSocket, not REST — see `ChatMessageResponse` for the
+shape each entry has.
+
 ## Authentication
 
 Every route except `/actuator/health` and `/api/v1/auth/**` requires a
@@ -114,7 +123,10 @@ Every non-2xx response from `/api/v1/**` uses the shape documented in
 }
 ```
 
-`violations` is only present for validation failures (400).
+`violations` is only present for validation failures (400). `message` is
+Vietnamese (the UI's display language) — `code` is the stable,
+language-independent identifier for anything that needs to branch on the
+error type programmatically.
 
 DTOs are defined per-feature under `<feature>/api/`; JPA entities are never
 returned directly from a controller.

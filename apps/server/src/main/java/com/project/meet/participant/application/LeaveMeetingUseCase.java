@@ -21,7 +21,7 @@ public class LeaveMeetingUseCase {
 	public void execute(UUID meetingId, UUID userId) {
 		MeetingParticipant participant = participantRepository
 				.findFirstByMeetingIdAndUserIdAndLeftAtIsNull(meetingId, userId)
-				.orElseThrow(() -> new ResourceNotFoundException("NOT_IN_MEETING", "You are not currently in this meeting"));
+				.orElseThrow(() -> new ResourceNotFoundException("NOT_IN_MEETING", "Bạn hiện không có mặt trong cuộc họp này"));
 
 		participant.leave();
 	}

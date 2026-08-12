@@ -22,7 +22,7 @@ public class UserController {
 	@GetMapping("/me")
 	public UserProfileResponse me(@AuthenticationPrincipal AuthenticatedUser principal) {
 		User user = userRepository.findById(principal.userId())
-				.orElseThrow(() -> new ResourceNotFoundException("USER_NOT_FOUND", "User no longer exists"));
+				.orElseThrow(() -> new ResourceNotFoundException("USER_NOT_FOUND", "Người dùng không còn tồn tại"));
 		return UserProfileResponse.from(user);
 	}
 }

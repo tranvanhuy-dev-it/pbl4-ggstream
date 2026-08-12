@@ -20,8 +20,7 @@ com.project.meet
 ├── participant/       # MeetingParticipant entity, join/leave/list use cases
 ├── signaling/         # WebSocket handler, envelope routing, room concurrency, heartbeat
 ├── rtc/               # GET /rtc/ice-servers — TURN credential generation
-├── chat/              # Milestone 7
-├── media/             # media abstraction (Mesh → SFU), Milestone 6+
+├── chat/              # persisted messages, GET history, WS CHAT_MESSAGE handling
 └── MeetApplication.java
 ```
 
@@ -79,12 +78,23 @@ a stable `ApiError` JSON shape:
 ```json
 {
   "code": "MEETING_NOT_FOUND",
-  "message": "Meeting not found",
+  "message": "Không tìm thấy cuộc họp",
   "timestamp": "2026-08-12T10:00:00Z",
   "requestId": "b3f1...",
   "violations": null
 }
 ```
+
+`message` is Vietnamese (the frontend's display language) since it's what
+the UI renders as-is (`ErrorAlert`) without any client-side translation
+layer; `code` is the stable, language-independent identifier for anything
+that needs to branch on the error type. Bean validation's default messages
+(`@NotBlank`, `@Size`, ...) are localized the same way, via
+`src/main/resources/ValidationMessages.properties` — Hibernate Validator
+picks that up automatically as the default resource bundle, so individual
+`@NotBlank` annotations don't need an explicit `message = "..."` unless
+they want to override the bundle default (as `RegisterRequest.password`
+does, for its specific length message).
 
 - `ApiException` (with `code` + `HttpStatus`) is the base type for
   domain/application errors; feature modules subclass it
@@ -183,12 +193,16 @@ public interface MediaServer {
 }
 ```
 
-`meeting` will depend on this interface, not a concrete media server. Milestone
-4–7 ship a `MeshMediaServer` (effectively a no-op — Mesh peer connections are
-negotiated entirely client-side via signaling); Milestone 11 adds an
-`SfuMediaServer`. This interface does not exist yet in code — it's introduced
-alongside the `meeting` domain in Milestone 2/4, documented here ahead of time
-so the intent is clear before it's built.
+`meeting` will depend on this interface, not a concrete media server. It
+still doesn't exist in code as of Milestone 7 — Mesh (Milestones 4–6) turned
+out to need **zero** backend media orchestration at all: peer connections
+are negotiated entirely client-side, with the existing generic signaling
+relay (`WEBRTC_OFFER`/`ANSWER`/`ICE_CANDIDATE`, `SCREEN_SHARE_STARTED`/
+`STOPPED`) as the only server involvement. A `MeshMediaServer`
+implementation of this interface would genuinely be a no-op, so it isn't
+worth writing until Milestone 11's `SfuMediaServer` actually needs the
+seam — adding an unused interface+no-op-implementation pair now would be
+exactly the kind of premature abstraction this project avoids elsewhere.
 
 ## Signaling & concurrency model (Milestone 3)
 

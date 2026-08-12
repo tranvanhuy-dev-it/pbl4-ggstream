@@ -7,7 +7,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * In-memory presence state for one active meeting: who's currently
- * connected over WebSocket, keyed by session id. Never persisted — see
+ * connected over WebSocket, keyed by session id, plus anyone held in the
+ * waiting room lane. Never persisted — see
  * docs/database/schema.md#what-is-not-persisted for why this lives in
  * memory instead of PostgreSQL.
  */
@@ -15,6 +16,7 @@ public class MeetingRuntime {
 
 	private final UUID meetingId;
 	private final Map<String, RuntimeParticipant> participantsBySessionId = new ConcurrentHashMap<>();
+	private final Map<String, WaitingParticipant> waitingBySessionId = new ConcurrentHashMap<>();
 
 	public MeetingRuntime(UUID meetingId) {
 		this.meetingId = meetingId;
@@ -37,10 +39,33 @@ public class MeetingRuntime {
 	}
 
 	public boolean isEmpty() {
-		return participantsBySessionId.isEmpty();
+		return participantsBySessionId.isEmpty() && waitingBySessionId.isEmpty();
 	}
 
 	public Collection<RuntimeParticipant> participants() {
 		return participantsBySessionId.values();
+	}
+
+	public void addWaiting(String sessionId, WaitingParticipant waiting) {
+		waitingBySessionId.put(sessionId, waiting);
+	}
+
+	public WaitingParticipant removeWaiting(String sessionId) {
+		return waitingBySessionId.remove(sessionId);
+	}
+
+	public WaitingParticipant removeWaitingByUserId(UUID userId) {
+		WaitingParticipant match = waitingBySessionId.values().stream()
+				.filter(w -> w.getUserId().equals(userId))
+				.findFirst()
+				.orElse(null);
+		if (match != null) {
+			waitingBySessionId.remove(match.getSession().getId());
+		}
+		return match;
+	}
+
+	public Collection<WaitingParticipant> waitingParticipants() {
+		return waitingBySessionId.values();
 	}
 }

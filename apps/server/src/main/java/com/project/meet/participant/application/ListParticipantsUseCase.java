@@ -24,7 +24,7 @@ public class ListParticipantsUseCase {
 	@Transactional(readOnly = true)
 	public List<ParticipantResponse> activeParticipants(UUID meetingId) {
 		if (!meetingRepository.existsById(meetingId)) {
-			throw new ResourceNotFoundException("MEETING_NOT_FOUND", "Meeting not found");
+			throw new ResourceNotFoundException("MEETING_NOT_FOUND", "Không tìm thấy cuộc họp");
 		}
 		return participantRepository.findByMeetingIdAndLeftAtIsNull(meetingId).stream()
 				.map(ParticipantResponse::from)

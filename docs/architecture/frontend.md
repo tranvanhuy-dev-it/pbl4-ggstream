@@ -97,6 +97,114 @@ remote peers, not just the lobby preview.
   remote peers — a mirrored remote video would show the other person
   backwards.
 
+## Screen share, chat, waiting room & host controls (Milestone 7)
+
+- `lib/webrtc/PeerConnectionManager.ts` grew a `PeerEntry` per peer
+  (`{pc, negotiationReady, screenSender, primaryRemoteStreamId}`) instead of
+  a bare `RTCPeerConnection` map. `negotiationReady` guards
+  `onnegotiationneeded`: it's false while the initial offer/answer for a
+  newly-`connect()`-ed peer is still in flight, so adding the screen track
+  during that window doesn't fire a second, competing offer — it flips true
+  only once the initial connection is established, and from then on any
+  `addTrack`/`removeTrack` (screen share start/stop) triggers a real
+  renegotiation. `startScreenShare(stream)`/`stopScreenShare()` call
+  `pc.addTrack`/`removeTrack` on every peer's connection, not a
+  connection-replacing `getUserMedia` swap, so the camera track is
+  unaffected — screen share is an *additional* track, not a substitute one.
+- On the receiving side, `primaryRemoteStreamId` records the first
+  `MediaStream.id` seen for a given peer (the camera) so a second stream
+  arriving later is recognized as their screen share and routed to
+  `onRemoteScreenStream` instead of the regular remote-video callback —
+  there's no explicit "this track is a screen" flag in WebRTC itself, so
+  the manager infers it from arrival order.
+- `features/meeting/hooks/useScreenShare.ts` wraps
+  `getDisplayMedia`/manager calls and listens for the captured track's
+  native `ended` event, since the browser's own "Stop sharing" bar can end
+  capture without the app's UI being involved at all.
+- `features/chat/` (new feature folder) — `api/chatApi.ts` fetches history
+  once on room load (`GET /meetings/{id}/messages`), then
+  `components/ChatPanel.tsx` appends live `CHAT_MESSAGE` envelopes from the
+  socket exactly like the roster does with `PARTICIPANT_JOINED`/`LEFT`; no
+  optimistic local echo — the server's broadcast (which includes the
+  sender) is the only source of a message actually appearing.
+- `features/meeting/components/ParticipantsPanel.tsx` — the one place a
+  join request can actually be decided. It lists everyone in
+  `PARTICIPANT_WAITING` state at the top (host-only, with admit/deny
+  buttons sending `PARTICIPANT_APPROVED`/`REJECTED`), followed by the full
+  roster with per-participant host actions (mute/remove). It is purely a
+  view over socket-driven state — no REST call of its own, since the
+  waiting room is a signaling-layer concept (see
+  [networking/signaling.md](../networking/signaling.md#waiting-room-milestone-7)).
+  A new join request also raises a transient, auto-dismissing banner
+  (`joinNotice` in `MeetingRoomView`) with a shortcut straight into this
+  panel, so a host doesn't have to keep the panel open to notice someone's
+  waiting — but approval/rejection is only ever done from inside it, not
+  from the banner itself.
+- `MeetingRoomView.tsx` now runs a small `WaitingState` state machine
+  (`"none" | "waiting" | "rejected"`) for the joining client, and a
+  `removedByHost` flag for `HOST_REMOVE_PARTICIPANT` that redirects home
+  after a short delay so the removed user sees why before being bounced.
+  Host-only mute/remove buttons render as an overlay on each remote
+  participant's tile rather than a separate control panel, since they only
+  ever apply to that one tile. Chat and participants share one
+  `activePanel: "none" | "chat" | "participants"` slot on the right edge
+  (opening one closes the other) rather than independent booleans, since
+  showing both at once would leave too little room for video.
+
+## Video layout: pin-to-spotlight (Milestone 7)
+
+Early Milestone 7 rendered every tile (self + remote + an always-on-top
+screen-share strip) in one `grid-cols-*` block that grew taller than the
+viewport as participants joined, forcing the whole page to scroll — unusable
+past a handful of people. `MeetingRoomView` now builds a flat list of
+`Tile`s (self camera, each remote camera, the active screen share if any)
+and keeps one `pinnedKey` for which tile — if any — is spotlighted:
+
+- **No pin**: all tiles render in the original responsive grid, but the
+  grid itself is the scroll container (`overflow-y-auto` on a `min-h-0
+  flex-1` section) — the page (`h-screen overflow-hidden` on the root) never
+  scrolls, only the tile area does when there are more participants than
+  fit.
+- **Pinned**: the pinned tile fills a `flex: 2` column on the left (roughly
+  2/3 width) at full height (`VideoTile`'s new `fill` prop swaps its
+  default `aspect-video` sizing for `h-full w-full`); every other tile
+  renders small in a `flex: 1` vertical strip on the right, which scrolls
+  independently (its own `overflow-y-auto`) rather than showing all
+  remaining participants at once — the same "spotlight + filmstrip" pattern
+  most Meet-style apps use, not a grid that keeps growing.
+- Every tile carries a small pin-toggle button (top-left overlay, via
+  `VideoTile`'s new `children` overlay slot); host mute/remove buttons
+  reuse the same overlay slot (top-right) rather than a separate absolutely-
+  positioned wrapper.
+- Starting a screen share auto-pins it (`useEffect` keyed on `sharingUserId`
+  sets `pinnedKey` to the screen tile's key), matching the convention that a
+  presenter's screen becomes the meeting's focus without anyone having to
+  pin it manually; stopping the share clears the pin only if the screen tile
+  was what was pinned, so a manual pin on a person survives an unrelated
+  screen share elsewhere.
+
+## UI shell & design system
+
+- `components/Navbar.tsx` — sticky top navbar shared by every route via the
+  root layout; renders differently based on auth state (sign in/register
+  links vs. avatar + name + sign out), so no page has to duplicate that
+  logic. Added specifically because early milestones only rendered bare
+  centered content with no persistent chrome.
+- `app/globals.css` defines a `--gradient` custom property (violet → pink,
+  separate light/dark values) and a `.gradient-text` utility, used sparingly
+  for emphasis (hero headline, brand mark) rather than as a global theme —
+  the goal was a distinct visual identity, deliberately not a Google Meet
+  reproduction, while keeping the underlying call/lobby/room *functionality*
+  equivalent. Fixed a real bug in the same file where `body` hardcoded
+  `font-family: Arial, Helvetica, sans-serif`, silently ignoring the Geist
+  fonts already loaded via `next/font` — now `var(--font-sans), Arial,
+  Helvetica, sans-serif`.
+- All user-facing copy (buttons, labels, empty states, error text) is
+  Vietnamese, matching the backend's `ApiError.message` language (see
+  [backend.md](./backend.md#error-handling)) — there's no i18n/translation
+  layer on either side, Vietnamese is simply the one language the UI is
+  written in.
+
 ## Why `page.tsx` stays thin
 
 WebRTC and signaling state machines are non-trivial and need to survive

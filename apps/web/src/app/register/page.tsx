@@ -3,7 +3,7 @@ import { RegisterForm } from "@/features/auth/components/RegisterForm";
 
 export default function RegisterPage() {
   return (
-    <AuthLayout title="Create your account" subtitle="Start hosting meetings in minutes">
+    <AuthLayout title="Tạo tài khoản của bạn" subtitle="Bắt đầu tổ chức cuộc họp chỉ trong vài phút">
       <RegisterForm />
     </AuthLayout>
   );

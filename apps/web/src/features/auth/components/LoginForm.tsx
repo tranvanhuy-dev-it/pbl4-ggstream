@@ -25,7 +25,7 @@ export function LoginForm() {
       await login({ email, password });
       router.push("/");
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : "Something went wrong");
+      setError(err instanceof ApiClientError ? err.message : "Đã xảy ra lỗi, vui lòng thử lại");
     } finally {
       setSubmitting(false);
     }
@@ -44,7 +44,7 @@ export function LoginForm() {
       />
       <TextField
         id="password"
-        label="Password"
+        label="Mật khẩu"
         type="password"
         autoComplete="current-password"
         required
@@ -52,13 +52,13 @@ export function LoginForm() {
         onChange={(e) => setPassword(e.target.value)}
       />
       {error && <ErrorAlert message={error} />}
-      <SubmitButton loading={submitting} loadingLabel="Signing in…">
-        Sign in
+      <SubmitButton loading={submitting} loadingLabel="Đang đăng nhập…">
+        Đăng nhập
       </SubmitButton>
       <p className="text-center text-sm text-muted">
-        No account?{" "}
+        Chưa có tài khoản?{" "}
         <Link href="/register" className="font-medium text-accent hover:underline">
-          Register
+          Đăng ký
         </Link>
       </p>
     </form>

@@ -6,6 +6,6 @@ import org.springframework.http.HttpStatus;
 public class MeetingEndedException extends ApiException {
 
 	public MeetingEndedException() {
-		super("MEETING_ENDED", HttpStatus.CONFLICT, "This meeting has already ended");
+		super("MEETING_ENDED", HttpStatus.CONFLICT, "Cuộc họp này đã kết thúc");
 	}
 }

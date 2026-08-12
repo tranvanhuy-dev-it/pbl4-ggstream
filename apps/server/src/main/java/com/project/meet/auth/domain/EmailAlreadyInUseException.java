@@ -6,6 +6,6 @@ import org.springframework.http.HttpStatus;
 public class EmailAlreadyInUseException extends ApiException {
 
 	public EmailAlreadyInUseException(String email) {
-		super("EMAIL_ALREADY_IN_USE", HttpStatus.CONFLICT, "An account with email '" + email + "' already exists");
+		super("EMAIL_ALREADY_IN_USE", HttpStatus.CONFLICT, "Tài khoản với email '" + email + "' đã tồn tại");
 	}
 }

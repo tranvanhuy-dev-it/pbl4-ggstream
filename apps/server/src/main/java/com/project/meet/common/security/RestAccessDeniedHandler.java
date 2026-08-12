@@ -27,7 +27,7 @@ public class RestAccessDeniedHandler implements AccessDeniedHandler {
 			throws IOException {
 		response.setStatus(HttpServletResponse.SC_FORBIDDEN);
 		response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-		ApiError error = ApiError.of("ACCESS_DENIED", "You do not have permission to perform this action",
+		ApiError error = ApiError.of("ACCESS_DENIED", "Bạn không có quyền thực hiện hành động này",
 				MDC.get(RequestIdFilter.MDC_KEY));
 		objectMapper.writeValue(response.getWriter(), error);
 	}

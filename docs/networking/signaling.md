@@ -39,11 +39,14 @@ type:
   (`afterConnectionEstablished` / `afterConnectionClosed`), not by a
   client-sent message — a dropped connection is still a "leave" whether or
   not the client managed to send one first.
-- **Everything else** → relayed. If the envelope has a `targetId`, it's
-  delivered only to that participant's session (point-to-point — this is
-  how `WEBRTC_OFFER`/`WEBRTC_ANSWER`/`ICE_CANDIDATE` will work once
-  Milestone 4 starts sending them). Without a `targetId`, it's broadcast to
-  every other session in the room.
+- **`CHAT_MESSAGE`**, **`PARTICIPANT_APPROVED`/`PARTICIPANT_REJECTED`**,
+  **`HOST_MUTE_PARTICIPANT`**, **`HOST_REMOVE_PARTICIPANT`** → custom
+  handling, see the dedicated sections below.
+- **Everything else** (`WEBRTC_OFFER`/`WEBRTC_ANSWER`/`ICE_CANDIDATE`,
+  `SCREEN_SHARE_STARTED`/`STOPPED`) → generic relay. If the envelope has a
+  `targetId`, it's delivered only to that participant's session
+  (point-to-point). Without a `targetId`, it's broadcast to every other
+  session in the room.
 - `senderId`/`meetingId` on every envelope are always stamped server-side
   from the authenticated session, never trusted from the client — a
   connection can't claim to speak as a different user.
@@ -110,3 +113,61 @@ it only decides *when* a session counts as dead.
 Reconnection (a client that reconnects after a timeout resuming its
 session rather than being treated as a brand-new participant) is explicitly
 out of scope here — that's Milestone 8.
+
+## Waiting room (Milestone 7)
+
+`MeetingRuntime` holds two separate maps: active `participants` and
+`waitingParticipants` (sessions in the waiting lane — not in anyone's
+roster, not receiving broadcasts, not counted for "is the room empty").
+When a non-host joins a meeting whose `accessType` is `APPROVAL_REQUIRED`:
+
+1. Their session goes into the waiting map instead of the active one.
+   `PARTICIPANT_WAITING` is sent to them (an ack their request is in) and
+   to every currently-connected host.
+2. If no host is connected yet when they arrive, nothing is lost — a host
+   who joins later receives a `PARTICIPANT_WAITING` for everyone still
+   waiting, as part of their own join handling.
+3. A host decides by sending `PARTICIPANT_APPROVED` or
+   `PARTICIPANT_REJECTED` with `targetId` set to the waiting user's id.
+   The server verifies the sender is actually a `HOST` in that room's
+   runtime before acting — a non-host sending this is silently ignored, the
+   same guard as `HOST_MUTE_PARTICIPANT`/`HOST_REMOVE_PARTICIPANT` below.
+4. On approval: the waiting session gets the normal snapshot + becomes a
+   full `RuntimeParticipant`, exactly as if they'd connected directly, then
+   `PARTICIPANT_JOINED` broadcasts to the room. On rejection: the session is
+   closed with a `PARTICIPANT_REJECTED` sent first so the client can show
+   why.
+
+The REST `POST /meetings/{id}/join` call already persisted their
+`meeting_participants` row *before* any of this — the waiting room is a
+purely runtime/signaling concept (see
+[database/schema.md](../database/schema.md#what-is-not-persisted)), it
+doesn't gate whether they're recorded as having joined, only whether
+they're actually present in the live room yet.
+
+## Chat (Milestone 7)
+
+`CHAT_MESSAGE` is the one event type that touches PostgreSQL:
+`SendChatMessageUseCase` persists it (validating non-empty, ≤4000 chars)
+*before* the server constructs the outbound envelope from the saved
+row's id/timestamp, then sends that to **every** participant including the
+original sender — nobody renders an unconfirmed local copy first. This
+keeps a single source of truth for message ordering and ids instead of
+reconciling an optimistic client render against what the server eventually
+persists.
+
+## Host controls (Milestone 7)
+
+`HOST_MUTE_PARTICIPANT` and `HOST_REMOVE_PARTICIPANT` both require the
+sender to hold `HOST` role in that room's runtime — checked the same way as
+waiting-room approval decisions — before anything happens:
+
+- **Mute**: a plain relay to the target once authorized. The target's own
+  client is what actually mutes its microphone on receipt; the server never
+  touches media state, it only delivers the instruction.
+- **Remove**: not a relay — the server closes the target's WebSocket
+  session directly. That triggers the normal `afterConnectionClosed` →
+  `handleLeave` path, which broadcasts `PARTICIPANT_LEFT` to everyone else
+  exactly as a voluntary leave would. The target is sent a
+  `HOST_REMOVE_PARTICIPANT` envelope just before the close so their client
+  can show *why* the connection ended, rather than just going silent.

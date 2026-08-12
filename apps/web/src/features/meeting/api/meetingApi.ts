@@ -30,11 +30,11 @@ function authHeaders(token: string): HeadersInit {
   return { Authorization: `Bearer ${token}` };
 }
 
-export function createMeeting(token: string, title: string): Promise<Meeting> {
+export function createMeeting(token: string, title: string, accessType?: MeetingAccessType): Promise<Meeting> {
   return apiFetch<Meeting>("/api/v1/meetings", {
     method: "POST",
     headers: authHeaders(token),
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ title, accessType }),
   });
 }
 

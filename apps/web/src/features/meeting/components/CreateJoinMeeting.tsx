@@ -9,7 +9,8 @@ import { ApiClientError } from "@/lib/api/client";
 export function CreateJoinMeeting() {
   const { token } = useAuth();
   const router = useRouter();
-  const [title, setTitle] = useState("New meeting");
+  const [title, setTitle] = useState("Cuộc họp mới");
+  const [requireApproval, setRequireApproval] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,10 +21,14 @@ export function CreateJoinMeeting() {
     setCreating(true);
     setError(null);
     try {
-      const meeting = await meetingApi.createMeeting(token, title.trim() || "New meeting");
+      const meeting = await meetingApi.createMeeting(
+        token,
+        title.trim() || "Cuộc họp mới",
+        requireApproval ? "APPROVAL_REQUIRED" : "PUBLIC",
+      );
       router.push(`/meet/${meeting.code}`);
     } catch (err) {
-      setError(err instanceof ApiClientError ? err.message : "Could not create meeting");
+      setError(err instanceof ApiClientError ? err.message : "Không thể tạo cuộc họp");
       setCreating(false);
     }
   }
@@ -40,21 +45,25 @@ export function CreateJoinMeeting() {
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Meeting title"
+          placeholder="Tên cuộc họp"
           className="rounded-lg border border-input-border bg-input-bg px-3.5 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
         />
+        <label className="flex items-center gap-2 text-sm text-muted">
+          <input type="checkbox" checked={requireApproval} onChange={(e) => setRequireApproval(e.target.checked)} />
+          Yêu cầu chủ phòng phê duyệt trước khi vào
+        </label>
         <button
           type="submit"
           disabled={creating}
           className="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:opacity-60"
         >
-          {creating ? "Creating…" : "New meeting"}
+          {creating ? "Đang tạo…" : "Tạo cuộc họp mới"}
         </button>
       </form>
 
       <div className="flex items-center gap-3 text-xs text-muted">
         <div className="h-px flex-1 bg-card-border" />
-        or
+        hoặc
         <div className="h-px flex-1 bg-card-border" />
       </div>
 
@@ -62,7 +71,7 @@ export function CreateJoinMeeting() {
         <input
           value={joinCode}
           onChange={(e) => setJoinCode(e.target.value)}
-          placeholder="Enter a code"
+          placeholder="Nhập mã cuộc họp"
           className="flex-1 rounded-lg border border-input-border bg-input-bg px-3.5 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
         />
         <button
@@ -70,7 +79,7 @@ export function CreateJoinMeeting() {
           disabled={!joinCode.trim()}
           className="rounded-lg border border-input-border px-4 py-2.5 text-sm font-medium transition-colors hover:bg-black/5 disabled:opacity-50 dark:hover:bg-white/10"
         >
-          Join
+          Tham gia
         </button>
       </form>
 

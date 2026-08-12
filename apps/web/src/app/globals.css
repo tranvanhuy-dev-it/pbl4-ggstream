@@ -1,16 +1,18 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f7f7f8;
-  --foreground: #171717;
+  --background: #faf9fc;
+  --foreground: #17151f;
   --card: #ffffff;
-  --card-border: rgba(0, 0, 0, 0.08);
+  --card-border: rgba(23, 21, 31, 0.08);
   --input-bg: #ffffff;
-  --input-border: rgba(0, 0, 0, 0.14);
-  --muted: rgba(23, 23, 23, 0.6);
-  --accent: #4338ca;
-  --accent-hover: #3730a3;
+  --input-border: rgba(23, 21, 31, 0.14);
+  --muted: rgba(23, 21, 31, 0.58);
+  --accent: #7c3aed;
+  --accent-hover: #6d28d9;
   --accent-foreground: #ffffff;
+  --accent-2: #db2777;
+  --gradient: linear-gradient(135deg, #7c3aed 0%, #db2777 100%);
   --danger: #dc2626;
   --danger-bg: rgba(220, 38, 38, 0.08);
   --danger-border: rgba(220, 38, 38, 0.25);
@@ -27,6 +29,7 @@
   --color-accent: var(--accent);
   --color-accent-hover: var(--accent-hover);
   --color-accent-foreground: var(--accent-foreground);
+  --color-accent-2: var(--accent-2);
   --color-danger: var(--danger);
   --color-danger-bg: var(--danger-bg);
   --color-danger-border: var(--danger-border);
@@ -36,16 +39,18 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0b;
-    --foreground: #ededed;
-    --card: #141416;
-    --card-border: rgba(255, 255, 255, 0.08);
-    --input-bg: #1c1c1f;
-    --input-border: rgba(255, 255, 255, 0.12);
-    --muted: rgba(237, 237, 237, 0.55);
-    --accent: #6366f1;
-    --accent-hover: #818cf8;
-    --accent-foreground: #ffffff;
+    --background: #0b0a10;
+    --foreground: #f2f1f7;
+    --card: #16141d;
+    --card-border: rgba(255, 255, 255, 0.09);
+    --input-bg: #1d1a26;
+    --input-border: rgba(255, 255, 255, 0.13);
+    --muted: rgba(242, 241, 247, 0.58);
+    --accent: #a78bfa;
+    --accent-hover: #c4b5fd;
+    --accent-foreground: #17102b;
+    --accent-2: #f472b6;
+    --gradient: linear-gradient(135deg, #a78bfa 0%, #f472b6 100%);
     --danger: #f87171;
     --danger-bg: rgba(248, 113, 113, 0.1);
     --danger-border: rgba(248, 113, 113, 0.3);
@@ -55,5 +60,12 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+.gradient-text {
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }

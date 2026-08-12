@@ -40,7 +40,7 @@ public class JoinMeetingUseCase {
 	@Transactional
 	public ParticipantResponse execute(UUID meetingId, UUID userId) {
 		Meeting meeting = meetingRepository.findById(meetingId)
-				.orElseThrow(() -> new ResourceNotFoundException("MEETING_NOT_FOUND", "Meeting not found"));
+				.orElseThrow(() -> new ResourceNotFoundException("MEETING_NOT_FOUND", "Không tìm thấy cuộc họp"));
 
 		if (meeting.isEnded()) {
 			throw new MeetingEndedException();
@@ -54,7 +54,7 @@ public class JoinMeetingUseCase {
 		}
 
 		User user = userRepository.findById(userId)
-				.orElseThrow(() -> new ResourceNotFoundException("USER_NOT_FOUND", "User no longer exists"));
+				.orElseThrow(() -> new ResourceNotFoundException("USER_NOT_FOUND", "Người dùng không còn tồn tại"));
 
 		ParticipantRole role = meeting.isHostedBy(userId) ? ParticipantRole.HOST : ParticipantRole.PARTICIPANT;
 		MeetingParticipant participant = new MeetingParticipant(meeting, user, user.getDisplayName(), role);

@@ -9,6 +9,8 @@ export function VideoTile({
   mirrored = false,
   muted = false,
   label,
+  fill = false,
+  children,
 }: {
   stream: MediaStream | null;
   /** Whether the video track should actually be shown (vs. an avatar placeholder — camera off, or no stream yet). */
@@ -19,6 +21,10 @@ export function VideoTile({
   /** Local self-view must stay muted to avoid echoing your own mic back to you; remote tiles should not be. */
   muted?: boolean;
   label?: string;
+  /** Fill the parent's box instead of forcing a 16:9 aspect ratio — used by the pinned/spotlight tile. */
+  fill?: boolean;
+  /** Overlay controls (pin, host actions) positioned absolutely by the caller. */
+  children?: React.ReactNode;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -32,7 +38,7 @@ export function VideoTile({
   const showVideo = active && stream !== null;
 
   return (
-    <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-black/90">
+    <div className={`relative overflow-hidden rounded-xl bg-black/90 ${fill ? "h-full w-full" : "aspect-video w-full"}`}>
       <video
         ref={videoRef}
         autoPlay
@@ -50,6 +56,7 @@ export function VideoTile({
       {label && (
         <span className="absolute bottom-2 left-2 rounded bg-black/60 px-2 py-0.5 text-xs text-white">{label}</span>
       )}
+      {children}
     </div>
   );
 }

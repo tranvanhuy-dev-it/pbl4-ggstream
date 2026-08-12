@@ -32,7 +32,7 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
 			throws IOException {
 		response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
 		response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-		ApiError error = ApiError.of("UNAUTHENTICATED", "Authentication is required to access this resource",
+		ApiError error = ApiError.of("UNAUTHENTICATED", "Bạn cần đăng nhập để truy cập tài nguyên này",
 				MDC.get(RequestIdFilter.MDC_KEY));
 		objectMapper.writeValue(response.getWriter(), error);
 	}

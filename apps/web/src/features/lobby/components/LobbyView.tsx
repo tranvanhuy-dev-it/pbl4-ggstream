@@ -56,7 +56,7 @@ export function LobbyView({ code }: { code: string }) {
       stop();
       router.push(`/meet/${code}/room`);
     } catch (err) {
-      setJoinError(err instanceof ApiClientError ? err.message : "Could not join meeting");
+      setJoinError(err instanceof ApiClientError ? err.message : "Không thể tham gia cuộc họp");
       setJoining(false);
     }
   }
@@ -64,7 +64,7 @@ export function LobbyView({ code }: { code: string }) {
   if (authStatus !== "authenticated" || loadState === "loading") {
     return (
       <main className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-muted">Loading…</p>
+        <p className="text-sm text-muted">Đang tải…</p>
       </main>
     );
   }
@@ -72,10 +72,10 @@ export function LobbyView({ code }: { code: string }) {
   if (loadState === "not_found") {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
-        <h1 className="text-xl font-semibold">Meeting not found</h1>
-        <p className="text-sm text-muted">No meeting exists for the code &ldquo;{code}&rdquo;.</p>
+        <h1 className="text-xl font-semibold">Không tìm thấy cuộc họp</h1>
+        <p className="text-sm text-muted">Không có cuộc họp nào với mã &ldquo;{code}&rdquo;.</p>
         <Link href="/" className="text-sm font-medium text-accent hover:underline">
-          Back to home
+          Về trang chủ
         </Link>
       </main>
     );
@@ -84,9 +84,9 @@ export function LobbyView({ code }: { code: string }) {
   if (loadState === "ended") {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
-        <h1 className="text-xl font-semibold">This meeting has ended</h1>
+        <h1 className="text-xl font-semibold">Cuộc họp này đã kết thúc</h1>
         <Link href="/" className="text-sm font-medium text-accent hover:underline">
-          Back to home
+          Về trang chủ
         </Link>
       </main>
     );
@@ -96,27 +96,31 @@ export function LobbyView({ code }: { code: string }) {
     <main className="flex min-h-screen flex-col items-center justify-center gap-8 px-6 py-12">
       <div className="flex w-full max-w-3xl flex-col items-center gap-2 text-center">
         <h1 className="text-xl font-semibold tracking-tight">{meeting?.title}</h1>
-        <p className="text-sm text-muted">Ready to join?</p>
+        <p className="text-sm text-muted">
+          {meeting?.accessType === "APPROVAL_REQUIRED" && meeting.hostId !== user?.id
+            ? "Chủ phòng cần phê duyệt trước khi bạn có thể vào."
+            : "Sẵn sàng tham gia?"}
+        </p>
       </div>
 
       <div className="grid w-full max-w-3xl gap-8 md:grid-cols-2 md:items-center">
         <div className="flex flex-col gap-3">
           <VideoTile stream={stream} active={cameraEnabled} displayName={displayName} mirrored muted />
           {mediaStatus === "error" && (
-            <p className="text-xs text-danger">{mediaError ?? "Camera/microphone unavailable"}</p>
+            <p className="text-xs text-danger">{mediaError ?? "Không thể truy cập camera/micro"}</p>
           )}
           <div className="flex justify-center gap-3">
             <MediaToggleButton
               enabled={micEnabled}
               onClick={toggleMic}
-              label={micEnabled ? "Mute microphone" : "Unmute microphone"}
+              label={micEnabled ? "Tắt micro" : "Bật micro"}
               enabledIcon={MicOnIcon}
               disabledIcon={MicOffIcon}
             />
             <MediaToggleButton
               enabled={cameraEnabled}
               onClick={toggleCamera}
-              label={cameraEnabled ? "Turn off camera" : "Turn on camera"}
+              label={cameraEnabled ? "Tắt camera" : "Bật camera"}
               enabledIcon={CameraOnIcon}
               disabledIcon={CameraOffIcon}
             />
@@ -126,7 +130,7 @@ export function LobbyView({ code }: { code: string }) {
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <label htmlFor="displayName" className="text-sm font-medium">
-              Your name
+              Tên của bạn
             </label>
             <input
               id="displayName"
@@ -141,7 +145,7 @@ export function LobbyView({ code }: { code: string }) {
             disabled={joining}
             className="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:opacity-60"
           >
-            {joining ? "Joining…" : "Join now"}
+            {joining ? "Đang tham gia…" : "Tham gia ngay"}
           </button>
         </div>
       </div>
