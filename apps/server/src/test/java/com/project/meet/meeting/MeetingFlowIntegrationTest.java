@@ -182,7 +182,7 @@ class MeetingFlowIntegrationTest {
 
 		MeetingResponse meeting = restTemplate.exchange(
 				"/api/v1/meetings", HttpMethod.POST,
-				new HttpEntity<>(new CreateMeetingRequest("Lịch PBL4", null, start, end, "Asia/Ho_Chi_Minh"), authHeaders(hostToken)),
+				new HttpEntity<>(new CreateMeetingRequest("Lịch PBL4", null, start, end, "Asia/Ho_Chi_Minh", null), authHeaders(hostToken)),
 				MeetingResponse.class).getBody();
 
 		assertThat(meeting.status()).isEqualTo(MeetingStatus.SCHEDULED);

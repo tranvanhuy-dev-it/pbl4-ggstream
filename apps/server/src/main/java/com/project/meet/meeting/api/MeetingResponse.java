@@ -1,5 +1,6 @@
 package com.project.meet.meeting.api;
 
+import com.project.meet.meeting.domain.MediaMode;
 import com.project.meet.meeting.domain.Meeting;
 import com.project.meet.meeting.domain.MeetingAccessType;
 import com.project.meet.meeting.domain.MeetingStatus;
@@ -15,6 +16,7 @@ public record MeetingResponse(
 		String hostDisplayName,
 		MeetingStatus status,
 		MeetingAccessType accessType,
+		MediaMode mediaMode,
 		Instant createdAt,
 		Instant startedAt,
 		Instant endedAt,
@@ -32,6 +34,7 @@ public record MeetingResponse(
 				meeting.getHost().getDisplayName(),
 				meeting.getStatus(),
 				meeting.getAccessType(),
+				meeting.getMediaMode(),
 				meeting.getCreatedAt(),
 				meeting.getStartedAt(),
 				meeting.getEndedAt(),

@@ -22,9 +22,10 @@ import {
   RemoveParticipantIcon,
 } from "@/components/icons";
 import * as meetingApi from "@/features/meeting/api/meetingApi";
-import type { Meeting } from "@/features/meeting/api/meetingApi";
+import type { Meeting, SfuToken } from "@/features/meeting/api/meetingApi";
 import { useMeetingSocket } from "@/features/meeting/hooks/useMeetingSocket";
 import { useWebRtcPeers } from "@/features/meeting/hooks/useWebRtcPeers";
+import { useSfuRoom } from "@/features/meeting/hooks/useSfuRoom";
 import { useScreenShare } from "@/features/meeting/hooks/useScreenShare";
 import { ParticipantsPanel, type WaitingRequest, type RosterEntry } from "@/features/meeting/components/ParticipantsPanel";
 import { ChatPanel } from "@/features/chat/components/ChatPanel";
@@ -58,6 +59,9 @@ export function MeetingRoomView({ code }: { code: string }) {
   const [joinNotice, setJoinNotice] = useState<string | null>(null);
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
   const [participantMicStates, setParticipantMicStates] = useState<Map<string, boolean>>(new Map());
+  const [sfuToken, setSfuToken] = useState<SfuToken | null>(null);
+
+  const isSfuMode = meeting?.mediaMode === "SFU";
 
   useEffect(() => {
     if (authStatus === "unauthenticated") {
@@ -106,25 +110,34 @@ export function MeetingRoomView({ code }: { code: string }) {
     };
   }, [meeting, token]);
 
+  useEffect(() => {
+    if (!meeting || !token || !isSfuMode) return;
+    let cancelled = false;
+
+    meetingApi.fetchSfuToken(token, meeting.id).then((t) => {
+      if (!cancelled) setSfuToken(t);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [meeting, token, isSfuMode]);
+
   const peerIds = useMemo(
-    () => Array.from(participants.keys()).filter((id) => id !== user?.id),
-    [participants, user?.id],
+    () => (isSfuMode ? [] : Array.from(participants.keys()).filter((id) => id !== user?.id)),
+    [participants, user?.id, isSfuMode],
   );
 
   const { send, status: socketStatus } = useMeetingSocket(meeting?.id ?? null, token, (envelope) =>
     handleSignalingMessage(envelope),
   );
 
-  const {
-    remoteStreams,
-    remoteScreenStreams,
-    handleEnvelope: handleWebRtcEnvelope,
-    startScreenShare,
-    stopScreenShare,
-    isScreenSharing,
-    manager,
-  } = useWebRtcPeers(user?.id ?? null, stream, peerIds, send, token);
-  const networkStats = useWebRtcStats(manager, activePanel === "diagnostics");
+  const meshRoom = useWebRtcPeers(user?.id ?? null, stream, peerIds, send, token);
+  const sfuRoom = useSfuRoom(isSfuMode ? sfuToken : null, stream);
+  const { handleEnvelope: handleWebRtcEnvelope, manager } = meshRoom;
+  const { remoteStreams, remoteScreenStreams, startScreenShare, stopScreenShare, isScreenSharing } =
+    isSfuMode ? sfuRoom : meshRoom;
+  const networkStats = useWebRtcStats(isSfuMode ? null : manager, activePanel === "diagnostics");
 
   function handleSignalingMessage(envelope: SignalingEnvelope) {
     switch (envelope.type) {

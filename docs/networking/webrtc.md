@@ -450,6 +450,64 @@ Sau đó Milestone 11 mới sử dụng dữ liệu đó để giải thích và
 
 Xem milestone plan trong root `README`.
 
+## Triển khai SFU (Milestone 11)
+
+SFU thực tế của project là một server [LiveKit](https://livekit.io) tự
+host, chạy trực tiếp trên máy qua `livekit-server.exe` — xem
+[sfu-setup.md](./sfu-setup.md) để biết lý do chọn LiveKit thay vì tự viết
+SFU bằng mediasoup (chủ yếu vì máy development không có sẵn toolchain C++
+để compile mediasoup's native worker, còn LiveKit có binary Windows chính
+thức, không cần compile).
+
+Khác với Mesh, SFU-mode meeting không dùng `PeerConnectionManager` ở
+frontend hay relay `WEBRTC_OFFER`/`ANSWER`/`ICE_CANDIDATE` ở backend —
+LiveKit tự quản lý toàn bộ signaling + SFU nội bộ của chính nó, tách biệt
+hoàn toàn khỏi WebSocket signaling của project (`SignalingWebSocketHandler`).
+Kết nối tới LiveKit đi qua một transport hoàn toàn khác:
+
+```text id="sfu-flow"
+Client                          Backend (Spring Boot)         LiveKit server
+  │                                     │                            │
+  │  POST /meetings/{id}/sfu-token      │                            │
+  │ ───────────────────────────────────▶                            │
+  │                                     │  ký AccessToken (JWT)      │
+  │                                     │  cục bộ, không gọi mạng    │
+  │  { url, token }                     │                            │
+  │ ◀───────────────────────────────────                            │
+  │                                                                  │
+  │  Room.connect(url, token)  (livekit-client)                     │
+  │ ─────────────────────────────────────────────────────────────▶ │
+  │                                                                  │
+  │  audio/video của MỌI participant khác, qua MỘT kết nối duy nhất │
+  │ ◀───────────────────────────────────────────────────────────── │
+```
+
+Chỉ transport media bị thay: chat, phòng chờ, tắt tiếng do chủ phòng, và
+reconnect (Milestone 7–8) vẫn chạy qua WebSocket signaling gốc, không đổi
+gì — vì những tính năng đó vốn thuộc tầng ứng dụng/signaling, không thuộc
+tầng media.
+
+### Vì sao chỉ có một `RTCPeerConnection`
+
+`RemoteTrack` của LiveKit không tự gắn nhãn "đây là participant nào" —
+`lib/sfu/liveKitClient.ts` phân biệt bằng `participant.identity`, chính là
+`userId` được backend nhúng vào token lúc ký (`IssueSfuTokenUseCase` →
+`AccessToken.setIdentity(userId)`). Track camera/mic của một participant
+được gộp vào một `MediaStream` theo `identity` đó; track chia sẻ màn hình
+(`Track.Source.ScreenShare`) được tách riêng — cùng quy ước với Mesh, nơi
+`primaryRemoteStreamId` (thứ tự `MediaStream.id` xuất hiện) đóng vai trò
+tương tự.
+
+### Token ngắn hạn, không gọi mạng để cấp
+
+`IssueSfuTokenUseCase` không hề gọi tới LiveKit server để cấp token — ký
+JWT bằng `io.livekit.server.AccessToken` là phép tính cục bộ (HMAC dựa
+trên `LIVEKIT_API_SECRET`), giống hệt cách `TurnCredentialService` tính
+TURN credential bằng HMAC-SHA1. Điều này có nghĩa endpoint
+`POST /meetings/{id}/sfu-token` vẫn trả lời được ngay cả khi
+`livekit-server.exe` đang tắt — client sẽ chỉ thất bại ở bước
+`Room.connect()` sau đó, không phải ở bước xin token.
+
 ## Thống kê WebRTC
 
 Sau khi media bắt đầu truyền

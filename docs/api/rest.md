@@ -44,7 +44,7 @@ end to end; the frontend doesn't call it beyond session rehydration on load.
 
 ### `POST /api/v1/meetings`
 
-Body: `{ "title", "accessType"? }` (`accessType` defaults to `PUBLIC`; `APPROVAL_REQUIRED` is enforced at the signaling layer — see [networking/signaling.md](../networking/signaling.md#waiting-room-milestone-7) — `INVITED` is stored but not yet enforced). Returns `201` with a `MeetingResponse`, including a generated join code (`abc-defg-hij` style, collision-checked against the DB). The caller becomes `hostId` but is **not** automatically a participant — they still call `/join` like anyone else, which is what actually creates their `meeting_participants` row and (for the host specifically) flips the meeting `CREATED → ACTIVE`.
+Body: `{ "title", "accessType"?, "mediaMode"? }` (`accessType` defaults to `PUBLIC`; `APPROVAL_REQUIRED` is enforced at the signaling layer — see [networking/signaling.md](../networking/signaling.md#waiting-room-milestone-7) — `INVITED` is stored but not yet enforced. `mediaMode` defaults to `MESH`; `SFU` requires calling `POST /meetings/{meetingId}/sfu-token` to actually join the call, see below). Returns `201` with a `MeetingResponse`, including a generated join code (`abc-defg-hij` style, collision-checked against the DB). The caller becomes `hostId` but is **not** automatically a participant — they still call `/join` like anyone else, which is what actually creates their `meeting_participants` row and (for the host specifically) flips the meeting `CREATED → ACTIVE`.
 
 ### `GET /api/v1/meetings/{meetingId}` / `GET /api/v1/meetings/code/{code}`
 
@@ -96,6 +96,28 @@ events as deltas (see [api/websocket-protocol.md](./websocket-protocol.md)).
 `404 MEETING_NOT_FOUND` if the meeting doesn't exist. Sending a message
 happens over the WebSocket, not REST — see `ChatMessageResponse` for the
 shape each entry has.
+
+### `POST /api/v1/meetings/{meetingId}/sfu-token`
+
+Requires `Authorization: Bearer <accessToken>`. Only valid for meetings
+created with `mediaMode: "SFU"` — `409 NOT_AN_SFU_MEETING` otherwise, so a
+Mesh-mode meeting can't accidentally end up connecting to the SFU. Returns
+a short-lived, per-user [LiveKit](https://livekit.io) access token the
+frontend uses to connect directly to the self-hosted LiveKit server (see
+[networking/sfu-setup.md](../networking/sfu-setup.md) and
+[networking/webrtc.md](../networking/webrtc.md#triển-khai-sfu-milestone-11)):
+
+```json
+{
+  "url": "ws://localhost:7880",
+  "token": "eyJhbGciOi..."
+}
+```
+
+`503 SFU_NOT_CONFIGURED` if `LIVEKIT_URL`/`LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET`
+aren't set. Unlike TURN credentials (which degrade gracefully to STUN-only),
+there's no fallback for a missing SFU — an `SFU`-mode meeting has no other
+transport to fall back to, so this fails loudly instead of silently.
 
 ## Authentication
 

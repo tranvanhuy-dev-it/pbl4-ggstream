@@ -40,6 +40,10 @@ app:
     secret: ${TURN_SECRET:}
     credential-ttl-seconds: ${TURN_CREDENTIAL_TTL_SECONDS:3600}
     stun-url: ${STUN_URL:stun:stun.l.google.com:19302}
+  livekit:
+    url: ${LIVEKIT_URL:}
+    api-key: ${LIVEKIT_API_KEY:}
+    api-secret: ${LIVEKIT_API_SECRET:}
 
 management:
   endpoints:

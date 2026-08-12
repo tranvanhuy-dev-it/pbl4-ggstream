@@ -3,6 +3,7 @@ package com.project.meet.meeting.application;
 import com.project.meet.common.exception.ResourceNotFoundException;
 import com.project.meet.meeting.api.CreateMeetingRequest;
 import com.project.meet.meeting.api.MeetingResponse;
+import com.project.meet.meeting.domain.MediaMode;
 import com.project.meet.meeting.domain.Meeting;
 import com.project.meet.meeting.domain.MeetingAccessType;
 import com.project.meet.meeting.infrastructure.MeetingRepository;
@@ -36,11 +37,13 @@ public class CreateMeetingUseCase {
 				.orElseThrow(() -> new ResourceNotFoundException("USER_NOT_FOUND", "Người dùng không còn tồn tại"));
 
 		MeetingAccessType accessType = request.accessType() != null ? request.accessType() : MeetingAccessType.PUBLIC;
+		MediaMode mediaMode = request.mediaMode() != null ? request.mediaMode() : MediaMode.MESH;
 
 		validateSchedule(request);
 		Meeting meeting = new Meeting(generateUniqueCode(), request.title().trim(), host, accessType,
 				request.scheduledStartAt(), request.scheduledEndAt(),
-				request.scheduledStartAt() == null ? null : (request.timezone() == null ? "UTC" : request.timezone()));
+				request.scheduledStartAt() == null ? null : (request.timezone() == null ? "UTC" : request.timezone()),
+				mediaMode);
 		meetingRepository.save(meeting);
 
 		return MeetingResponse.from(meeting);

@@ -2,11 +2,13 @@ package com.project.meet.meeting.application;
 
 import com.project.meet.common.exception.ResourceNotFoundException;
 import com.project.meet.meeting.api.MeetingResponse;
+import com.project.meet.meeting.domain.MediaMode;
 import com.project.meet.meeting.domain.Meeting;
 import com.project.meet.meeting.domain.NotMeetingHostException;
 import com.project.meet.meeting.infrastructure.MeetingRepository;
 import com.project.meet.participant.domain.MeetingParticipant;
 import com.project.meet.participant.infrastructure.MeetingParticipantRepository;
+import com.project.meet.sfu.domain.MediaServer;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,10 +19,12 @@ public class EndMeetingUseCase {
 
 	private final MeetingRepository meetingRepository;
 	private final MeetingParticipantRepository participantRepository;
+	private final MediaServer mediaServer;
 
-	public EndMeetingUseCase(MeetingRepository meetingRepository, MeetingParticipantRepository participantRepository) {
+	public EndMeetingUseCase(MeetingRepository meetingRepository, MeetingParticipantRepository participantRepository, MediaServer mediaServer) {
 		this.meetingRepository = meetingRepository;
 		this.participantRepository = participantRepository;
+		this.mediaServer = mediaServer;
 	}
 
 	/** Idempotent for an already-ended meeting — repeated end calls (e.g. double-click) just return the current state. */
@@ -37,6 +41,9 @@ public class EndMeetingUseCase {
 			meeting.end();
 			for (MeetingParticipant participant : participantRepository.findByMeetingIdAndLeftAtIsNull(meetingId)) {
 				participant.leave();
+			}
+			if (meeting.getMediaMode() == MediaMode.SFU) {
+				mediaServer.closeRoom(meetingId);
 			}
 		}
 

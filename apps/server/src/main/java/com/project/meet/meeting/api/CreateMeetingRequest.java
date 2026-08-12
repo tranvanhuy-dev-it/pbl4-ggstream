@@ -1,5 +1,6 @@
 package com.project.meet.meeting.api;
 
+import com.project.meet.meeting.domain.MediaMode;
 import com.project.meet.meeting.domain.MeetingAccessType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -10,9 +11,10 @@ public record CreateMeetingRequest(
 		MeetingAccessType accessType,
 		Instant scheduledStartAt,
 		Instant scheduledEndAt,
-		@Size(max = 80) String timezone
+		@Size(max = 80) String timezone,
+		MediaMode mediaMode
 ) {
 	public CreateMeetingRequest(String title, MeetingAccessType accessType) {
-		this(title, accessType, null, null, null);
+		this(title, accessType, null, null, null, null);
 	}
 }

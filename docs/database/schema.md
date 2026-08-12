@@ -44,9 +44,21 @@ implemented.
 | host_id     | UUID (FK → users) |                                       |
 | status      | enum      | CREATED, WAITING, ACTIVE, ENDED              |
 | access_type | enum      | PUBLIC, INVITED, APPROVAL_REQUIRED           |
+| media_mode  | enum      | MESH, SFU — nullable at the DB level only (see below); the app never writes a null value |
 | created_at  | timestamp |                                               |
 | started_at  | timestamp | nullable                                     |
 | ended_at    | timestamp | nullable                                     |
+
+`media_mode` (Milestone 11) is the one column in this schema that's
+nullable in Postgres despite always being populated by application code —
+it was added after real rows already existed in development databases, and
+Postgres refuses `ALTER TABLE ... ADD COLUMN ... NOT NULL` when existing
+rows would violate the constraint. `ddl-auto=update` can only change
+structure, not backfill data, so the constraint had to be dropped to the
+DB level rather than the app skipping the column entirely. Every row this
+application *writes* has a value (`CreateMeetingUseCase` defaults to
+`MESH`) — `Meeting.getMediaMode()` enforces non-null at the Java layer
+instead of the database layer for this one field.
 
 ### `meeting_participants`
 

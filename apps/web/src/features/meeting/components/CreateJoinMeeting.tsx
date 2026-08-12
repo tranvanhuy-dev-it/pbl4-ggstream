@@ -17,6 +17,7 @@ export function CreateJoinMeeting({ onScheduled }: { onScheduled?: () => void })
   const router = useRouter();
   const [title, setTitle] = useState("Cuộc họp mới");
   const [requireApproval, setRequireApproval] = useState(false);
+  const [useSfu, setUseSfu] = useState(false);
   const [joinCode, setJoinCode] = useState("");
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -35,6 +36,8 @@ export function CreateJoinMeeting({ onScheduled }: { onScheduled?: () => void })
         token,
         title.trim() || "Cuộc họp mới",
         requireApproval ? "APPROVAL_REQUIRED" : "PUBLIC",
+        undefined,
+        useSfu ? "SFU" : "MESH",
       );
       router.push(`/meet/${meeting.code}`);
     } catch (err) {
@@ -54,7 +57,7 @@ export function CreateJoinMeeting({ onScheduled }: { onScheduled?: () => void })
           scheduledStartAt: new Date(scheduledStart).toISOString(),
           scheduledEndAt: new Date(scheduledEnd).toISOString(),
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        });
+        }, useSfu ? "SFU" : "MESH");
       setShowSchedule(false);
       onScheduled?.();
     } catch (err) {
@@ -130,6 +133,10 @@ export function CreateJoinMeeting({ onScheduled }: { onScheduled?: () => void })
           <label className="flex items-start gap-2 text-sm text-muted">
             <input className="mt-0.5" type="checkbox" checked={requireApproval} onChange={(event) => setRequireApproval(event.target.checked)} />
             Yêu cầu chủ phòng phê duyệt trước khi vào
+          </label>
+          <label className="flex items-start gap-2 text-sm text-muted">
+            <input className="mt-0.5" type="checkbox" checked={useSfu} onChange={(event) => setUseSfu(event.target.checked)} />
+            Cuộc họp lớn (dùng SFU thay vì kết nối trực tiếp giữa mọi người)
           </label>
           {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex justify-end gap-2">

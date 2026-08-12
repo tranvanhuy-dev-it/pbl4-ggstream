@@ -1,0 +1,31 @@
+# LiveKit server config for local development (Milestone 11 — SFU).
+#
+# Copy this file to livekit.yaml (gitignored, same convention as .env) and
+# replace the placeholder key/secret with a real pair generated via:
+#
+#   services/sfu/bin/livekit-server.exe generate-keys
+#
+# The generated API key/secret pair must also be copied into
+# apps/server/.env as LIVEKIT_API_KEY / LIVEKIT_API_SECRET — this is the
+# only place the secret is used to sign participant access tokens; it never
+# reaches the frontend (mirrors the TURN shared-secret pattern in
+# docs/networking/ice-stun-turn.md).
+#
+# Run directly on the host — no Docker, matching every other service in
+# this project (see docs/networking/sfu-setup.md):
+#
+#   services/sfu/bin/livekit-server.exe --config services/sfu/livekit.yaml
+
+port: 7880
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  # Needed for clients outside the local machine/LAN to receive a reachable
+  # candidate for this server — same NAT-traversal concern TURN solves for
+  # peer-to-peer Mesh calls, just on the SFU's own media ports instead.
+  use_external_ip: true
+
+keys:
+  REPLACE_WITH_GENERATED_API_KEY: REPLACE_WITH_GENERATED_API_SECRET

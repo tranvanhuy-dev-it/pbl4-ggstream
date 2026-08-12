@@ -183,26 +183,56 @@ marking the meeting `ENDED`, also force-closes every still-active
 participant row — so "who was in the meeting when it ended" is always an
 accurate query, not something the client has to reconstruct.
 
-## Media abstraction
+## Media abstraction & SFU (Milestone 11)
 
 ```java
 public interface MediaServer {
     MediaRoom createRoom(UUID meetingId);
     void closeRoom(UUID meetingId);
-    MediaParticipantConfig createParticipant(UUID meetingId, UUID participantId);
+    MediaParticipantConfig createParticipant(UUID meetingId, UUID userId, String displayName);
 }
 ```
 
-`meeting` will depend on this interface, not a concrete media server. It
-still doesn't exist in code as of Milestone 7 — Mesh (Milestones 4–6) turned
-out to need **zero** backend media orchestration at all: peer connections
-are negotiated entirely client-side, with the existing generic signaling
-relay (`WEBRTC_OFFER`/`ANSWER`/`ICE_CANDIDATE`, `SCREEN_SHARE_STARTED`/
-`STOPPED`) as the only server involvement. A `MeshMediaServer`
-implementation of this interface would genuinely be a no-op, so it isn't
-worth writing until Milestone 11's `SfuMediaServer` actually needs the
-seam — adding an unused interface+no-op-implementation pair now would be
-exactly the kind of premature abstraction this project avoids elsewhere.
+(package `sfu.domain`). Mesh (Milestones 4–6) needed **zero** backend media
+orchestration — peer connections are negotiated entirely client-side, with
+the generic signaling relay (`WEBRTC_OFFER`/`ANSWER`/`ICE_CANDIDATE`,
+`SCREEN_SHARE_STARTED`/`STOPPED`) as the only server involvement — so this
+interface stayed undefined until a real implementation actually needed the
+seam, rather than adding an unused interface+no-op pair up front.
+
+`sfu.infrastructure.LiveKitMediaServer` is that implementation, driving a
+self-hosted [LiveKit](https://livekit.io) server (see
+[networking/sfu-setup.md](../networking/sfu-setup.md) for why LiveKit was
+chosen over mediasoup — mainly: it ships an official Windows binary, no
+C++ toolchain needed). It's the only class that imports LiveKit's SDK
+types directly:
+
+- `createParticipant` is pure local JWT signing
+  (`io.livekit.server.AccessToken`) — the SFU equivalent of
+  `TurnCredentialService`: a short-lived, per-user credential derived from
+  a server-only shared secret (`LIVEKIT_API_SECRET`), which never reaches
+  the client. No network call, so `IssueSfuTokenUseCase` doesn't depend on
+  the LiveKit server actually being reachable to issue a token.
+- `createRoom`/`closeRoom` do go over the network
+  (`io.livekit.server.RoomServiceClient`) and are treated as **best-effort**
+  — wrapped in try/catch + logged, never thrown — since LiveKit would
+  auto-create a room on first join anyway, and ending a meeting shouldn't
+  fail just because the SFU happens to be unreachable at that moment.
+  `EndMeetingUseCase` calls `closeRoom` for `SFU`-mode meetings alongside
+  its existing force-close-all-participants logic.
+
+`meeting.domain.MediaMode` (`MESH` | `SFU`) is a field on `Meeting`, fixed
+at creation time exactly like `MeetingAccessType` — a host picks the mode
+when creating the meeting; there's no mid-call migration between the two.
+`POST /api/v1/meetings/{meetingId}/sfu-token` (`sfu.api.SfuController`) is
+the only new REST surface: it 409s with `NOT_AN_SFU_MEETING` for a
+`MESH`-mode meeting, so a client can't accidentally end up calling LiveKit
+for a meeting that was never configured to use it.
+
+Everything else — chat, waiting room, host mute/remove, reconnect
+(Milestones 7–8) — is unchanged and mode-agnostic: those all run over the
+existing Spring Boot WebSocket regardless of which `MediaMode` a meeting
+uses. Only the WebRTC transport itself is swapped out.
 
 ## Signaling & concurrency model (Milestone 3)
 

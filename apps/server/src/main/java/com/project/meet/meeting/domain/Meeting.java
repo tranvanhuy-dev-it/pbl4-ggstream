@@ -44,6 +44,16 @@ public class Meeting {
 	@Column(name = "access_type", nullable = false, length = 20)
 	private MeetingAccessType accessType;
 
+	// Not DB-NOT-NULL: this column was added to a table with pre-existing
+	// rows, and Postgres refuses ALTER TABLE ... ADD COLUMN ... NOT NULL
+	// when existing rows would violate it (ddl-auto=update can't backfill
+	// data, only structure — see docs/database/schema.md). Every row this
+	// application writes always has a value (CreateMeetingUseCase defaults
+	// to MESH), so this is enforced at the Java/service layer instead.
+	@Enumerated(EnumType.STRING)
+	@Column(name = "media_mode", length = 10)
+	private MediaMode mediaMode;
+
 	@Column(name = "created_at", nullable = false, updatable = false)
 	private Instant createdAt;
 
@@ -67,11 +77,11 @@ public class Meeting {
 	}
 
 	public Meeting(String code, String title, User host, MeetingAccessType accessType) {
-		this(code, title, host, accessType, null, null, null);
+		this(code, title, host, accessType, null, null, null, MediaMode.MESH);
 	}
 
 	public Meeting(String code, String title, User host, MeetingAccessType accessType,
-				   Instant scheduledStartAt, Instant scheduledEndAt, String timezone) {
+				   Instant scheduledStartAt, Instant scheduledEndAt, String timezone, MediaMode mediaMode) {
 		this.code = code;
 		this.title = title;
 		this.host = host;
@@ -79,6 +89,7 @@ public class Meeting {
 		this.scheduledStartAt = scheduledStartAt;
 		this.scheduledEndAt = scheduledEndAt;
 		this.timezone = timezone;
+		this.mediaMode = mediaMode;
 		this.status = scheduledStartAt == null ? MeetingStatus.CREATED : MeetingStatus.SCHEDULED;
 	}
 
@@ -140,6 +151,10 @@ public class Meeting {
 
 	public MeetingAccessType getAccessType() {
 		return accessType;
+	}
+
+	public MediaMode getMediaMode() {
+		return mediaMode;
 	}
 
 	public Instant getCreatedAt() {

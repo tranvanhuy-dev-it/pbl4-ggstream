@@ -26,6 +26,14 @@ HELP.md
 .project
 .settings/
 
+# --- SFU (services/sfu) ---
+# livekit-server.exe is downloaded locally (docs/networking/sfu-setup.md),
+# not committed; livekit.yaml holds a real API key/secret pair, only the
+# .example template is tracked.
+services/sfu/bin/
+services/sfu/livekit.yaml
+!services/sfu/livekit.yaml.example
+
 # --- OS ---
 .DS_Store
 Thumbs.db

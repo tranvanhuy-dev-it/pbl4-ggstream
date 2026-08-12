@@ -251,6 +251,43 @@ and keeps one `pinnedKey` for which tile — if any — is spotlighted:
   ý của Milestone 9: đo đường media WebRTC thật tại endpoint thay vì thêm
   một lớp tổng hợp server chưa cần thiết.
 
+## SFU mode (Milestone 11)
+
+- `lib/sfu/liveKitClient.ts` — đối trọng của `PeerConnectionManager.ts` cho
+  chế độ SFU: bọc `Room` của `livekit-client`, dịch sự kiện
+  participant/track của LiveKit sang đúng hình dạng
+  `Map<participantId, MediaStream>` mà UI đã dùng cho Mesh, để
+  `MeetingRoomView` không cần nhánh render riêng theo transport. Khác biệt
+  cốt lõi với Mesh: chỉ có **một** kết nối tới LiveKit (không phải một kết
+  nối cho mỗi người khác trong phòng), track của từng participant được
+  phân biệt qua `participant.identity` — chính là `userId` mà backend nhúng
+  vào access token (`IssueSfuTokenUseCase`).
+- `features/meeting/hooks/useSfuRoom.ts` — cùng interface bên ngoài với
+  `useWebRtcPeers.ts` (`remoteStreams`, `remoteScreenStreams`,
+  `startScreenShare`, `stopScreenShare`, `isScreenSharing`), nên
+  `MeetingRoomView` chỉ cần chọn output của hook nào để render, không cần
+  sửa JSX của lưới video/ghim khung hình/chat/danh sách thành viên.
+- `MeetingRoomView.tsx` luôn gọi **cả hai** hook (`useWebRtcPeers` và
+  `useSfuRoom`) — tuân thủ quy tắc hooks của React (không gọi hook có điều
+  kiện) — nhưng chỉ một bên thực sự hoạt động: khi `meeting.mediaMode ===
+  "SFU"`, `peerIds` truyền cho `useWebRtcPeers` luôn là mảng rỗng (Mesh
+  không tạo kết nối nào), và ngược lại `useSfuRoom` nhận `sfuToken = null`
+  khi ở chế độ Mesh (hiệu ứng bên trong hook tự thoát sớm, không kết nối gì
+  cả).
+- `features/meeting/api/meetingApi.ts` có `fetchSfuToken(token, meetingId)`
+  — gọi 1 lần khi vào phòng ở chế độ SFU, tương tự cách `fetchIceServers`
+  được gọi cho Mesh — trả về `{ url, token }` để `Room.connect()` dùng
+  trực tiếp.
+- Chọn chế độ media (`MESH` mặc định hoặc `SFU`) là một checkbox trong
+  `CreateJoinMeeting.tsx` lúc tạo phòng, cùng kiểu với checkbox
+  `requireApproval` đã có — cố định cho cả vòng đời cuộc họp, không đổi
+  giữa chừng.
+- Tắt tiếng do chủ phòng (`HOST_MUTE_PARTICIPANT`) dùng lại nguyên vẹn sự
+  kiện signaling đã có — không cần thay đổi gì ở backend hay ở logic xử lý
+  sự kiện, vì hành vi vẫn là "người bị tắt tiếng tự tắt track mic của
+  chính mình", chỉ khác là track đó giờ được publish qua LiveKit thay vì
+  qua `PeerConnectionManager`.
+
 WebRTC and signaling state machines are non-trivial and need to survive
 route-level re-renders and be independently testable. They live in
 `lib/webrtc` / `lib/websocket` behind small hook APIs
