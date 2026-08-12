@@ -205,6 +205,33 @@ and keeps one `pinnedKey` for which tile — if any — is spotlighted:
   layer on either side, Vietnamese is simply the one language the UI is
   written in.
 
+## Reconnect (Milestone 8)
+
+- `lib/websocket/signalingClient.ts` no longer treats every close as final:
+  `ConnectionState` grew a `"reconnecting"` value, and any close that wasn't
+  triggered by the client's own `close()` call (tracked via a
+  `manualClose` flag) schedules a retry with exponential backoff (1s
+  doubling up to a 10s cap) instead of just reporting `"closed"` and
+  stopping. `close()` itself is unchanged — still an immediate, final
+  disconnect, and it now also cancels any pending retry timer.
+  `MeetingRoomView` shows this as a yellow pulsing "Mất kết nối, đang thử
+  lại…" status instead of the red "Mất kết nối" it used to show for every
+  disconnect.
+- `lib/webrtc/PeerConnectionManager.ts` gained `restartIce(participantId)` —
+  `createOffer({ iceRestart: true })` through the normal offer path — and
+  calls it itself when a peer's `connectionState` becomes `"failed"`
+  (deliberately not `"disconnected"`, which is usually transient and
+  self-recovers). Each `PeerEntry` now tracks `isInitiator` (set once in
+  `connect()`) so a restart, like the original connection, is only ever
+  offered by one side of the pair — reusing the same glare-avoidance
+  invariant instead of inventing a second one.
+- `useWebRtcPeers` also triggers `restartIce` proactively on receiving a
+  `PARTICIPANT_RECONNECTED` envelope (see
+  [networking/webrtc.md](../networking/webrtc.md#ice-restart-milestone-8)) —
+  the signaling layer resuming cleanly doesn't guarantee the separate media
+  path did, so this is a nudge rather than something to wait on
+  `connectionState` to notice by itself.
+
 ## Why `page.tsx` stays thin
 
 WebRTC and signaling state machines are non-trivial and need to survive

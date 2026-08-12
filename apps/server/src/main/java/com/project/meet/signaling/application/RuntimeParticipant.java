@@ -15,11 +15,12 @@ import java.util.UUID;
  */
 public class RuntimeParticipant {
 
-	private final WebSocketSession session;
+	private WebSocketSession session;
 	private final UUID userId;
 	private final String displayName;
 	private final ParticipantRole role;
 	private Instant lastHeartbeatAt;
+	private Instant disconnectedAt;
 
 	public RuntimeParticipant(WebSocketSession session, UUID userId, String displayName, ParticipantRole role) {
 		this.session = session;
@@ -31,6 +32,30 @@ public class RuntimeParticipant {
 
 	public void recordHeartbeat() {
 		this.lastHeartbeatAt = Instant.now();
+	}
+
+	/**
+	 * Re-point this participant at a new WebSocket session after a reconnect
+	 * (see {@link MeetingRuntime}'s grace-period handling) — same identity,
+	 * new transport. Mutated only inside the room's serialized command queue,
+	 * same as every other field here.
+	 */
+	public void reconnect(WebSocketSession newSession) {
+		this.session = newSession;
+		this.disconnectedAt = null;
+		this.lastHeartbeatAt = Instant.now();
+	}
+
+	public void markDisconnected() {
+		this.disconnectedAt = Instant.now();
+	}
+
+	public boolean isPendingRemoval() {
+		return disconnectedAt != null;
+	}
+
+	public Instant getDisconnectedAt() {
+		return disconnectedAt;
 	}
 
 	public WebSocketSession getSession() {

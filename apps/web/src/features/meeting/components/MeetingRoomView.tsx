@@ -135,6 +135,7 @@ export function MeetingRoomView({ code }: { code: string }) {
       case "WEBRTC_OFFER":
       case "WEBRTC_ANSWER":
       case "ICE_CANDIDATE":
+      case "PARTICIPANT_RECONNECTED":
         handleWebRtcEnvelope(envelope);
         break;
       case "PARTICIPANT_WAITING": {
@@ -416,10 +417,20 @@ export function MeetingRoomView({ code }: { code: string }) {
             <span className="inline-flex items-center gap-1.5">
               <span
                 className={`h-1.5 w-1.5 rounded-full ${
-                  socketStatus === "open" ? "bg-green-500" : socketStatus === "connecting" ? "bg-yellow-400" : "bg-red-500"
+                  socketStatus === "open"
+                    ? "bg-green-500"
+                    : socketStatus === "connecting" || socketStatus === "reconnecting"
+                      ? "animate-pulse bg-yellow-400"
+                      : "bg-red-500"
                 }`}
               />
-              {socketStatus === "open" ? "Đang hoạt động" : socketStatus === "connecting" ? "Đang kết nối…" : "Mất kết nối"}
+              {socketStatus === "open"
+                ? "Đang hoạt động"
+                : socketStatus === "connecting"
+                  ? "Đang kết nối…"
+                  : socketStatus === "reconnecting"
+                    ? "Mất kết nối, đang thử lại…"
+                    : "Mất kết nối"}
             </span>
           </div>
         </header>

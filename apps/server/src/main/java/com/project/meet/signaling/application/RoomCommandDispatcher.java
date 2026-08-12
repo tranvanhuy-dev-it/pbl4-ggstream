@@ -11,6 +11,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Concurrency model for signaling commands (JOIN, LEAVE, OFFER, ANSWER,
@@ -38,12 +40,27 @@ public class RoomCommandDispatcher {
 
 	private final Map<UUID, CompletableFuture<Void>> roomTails = new ConcurrentHashMap<>();
 	private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+	private final ScheduledExecutorService delayedDispatchExecutor = Executors.newSingleThreadScheduledExecutor();
 
 	public void dispatch(UUID meetingId, Runnable command) {
 		roomTails.compute(meetingId, (id, tail) -> {
 			CompletableFuture<Void> previous = (tail != null) ? tail : CompletableFuture.completedFuture(null);
 			return previous.thenRunAsync(guarded(meetingId, command), executor);
 		});
+	}
+
+	/**
+	 * Runs {@code command} through this room's normal serialized queue, but
+	 * only after {@code delay} — used for the reconnect grace period (see
+	 * {@code SignalingWebSocketHandler#handleDisconnect}): schedule the
+	 * "actually remove this participant" command for later, so a fast
+	 * reconnect can cancel it (by having already replaced the participant's
+	 * session) before it ever runs. The delay itself happens on a tiny
+	 * dedicated timer thread — only the resulting command executes on the
+	 * shared per-room queue, same as every other command.
+	 */
+	public void scheduleDispatch(UUID meetingId, Runnable command, long delay, TimeUnit unit) {
+		delayedDispatchExecutor.schedule(() -> dispatch(meetingId, command), delay, unit);
 	}
 
 	/** Called once a room's runtime is empty, so its tail future doesn't linger forever. Safe to call even if new commands race in right after — dispatch() just starts a fresh chain. */
@@ -64,5 +81,6 @@ public class RoomCommandDispatcher {
 	@PreDestroy
 	void shutdown() {
 		executor.shutdown();
+		delayedDispatchExecutor.shutdown();
 	}
 }

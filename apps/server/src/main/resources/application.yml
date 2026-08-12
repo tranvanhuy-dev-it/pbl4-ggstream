@@ -33,6 +33,7 @@ app:
   websocket:
     heartbeat-interval-seconds: ${WS_HEARTBEAT_INTERVAL_SECONDS:10}
     heartbeat-timeout-seconds: ${WS_HEARTBEAT_TIMEOUT_SECONDS:30}
+    reconnect-grace-seconds: ${WS_RECONNECT_GRACE_SECONDS:15}
   turn:
     host: ${TURN_HOST:}
     port: ${TURN_PORT:3478}

@@ -43,6 +43,15 @@ MEETING_JOIN / MEETING_LEAVE        — accepted, but a no-op: presence is
                                        driven by the socket connecting/
                                        closing, not by these messages
 PARTICIPANT_JOINED / PARTICIPANT_LEFT
+PARTICIPANT_RECONNECTED             — server → everyone except the
+                                        reconnecting user, when a dropped
+                                        participant reconnects within the
+                                        grace period (see
+                                        networking/signaling.md#reconnect-grace-period-milestone-8).
+                                        No JOINED/LEFT pair — the roster
+                                        entry never actually left — but a
+                                        cue to attempt an ICE restart for
+                                        that peer's WebRTC connection
 WEBRTC_OFFER / WEBRTC_ANSWER / ICE_CANDIDATE   — relayed by targetId (Milestone 4+)
 SCREEN_SHARE_STARTED / SCREEN_SHARE_STOPPED    — broadcast; UI-only signal,
                                                    the actual screen track is

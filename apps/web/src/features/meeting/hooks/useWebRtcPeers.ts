@@ -132,6 +132,15 @@ export function useWebRtcPeers(
         case "ICE_CANDIDATE":
           manager.addIceCandidate(senderId, envelope.payload as RTCIceCandidateInit);
           break;
+        case "PARTICIPANT_RECONNECTED":
+          // The signaling layer resumed seamlessly (no LEFT/JOINED), but
+          // the underlying network path for this peer's media may still
+          // have changed — nudge an ICE restart just in case the
+          // connection didn't already recover on its own.
+          if (manager.hasPeer(senderId)) {
+            void manager.restartIce(senderId);
+          }
+          break;
       }
     },
     [send],

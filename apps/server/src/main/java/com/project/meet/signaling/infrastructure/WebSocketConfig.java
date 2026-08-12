@@ -2,6 +2,7 @@ package com.project.meet.signaling.infrastructure;
 
 import com.project.meet.chat.application.SendChatMessageUseCase;
 import com.project.meet.common.config.CorsProperties;
+import com.project.meet.common.config.WebSocketProperties;
 import com.project.meet.common.security.JwtService;
 import com.project.meet.meeting.infrastructure.MeetingRepository;
 import com.project.meet.signaling.application.MeetingRuntimeRegistry;
@@ -25,6 +26,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
 	private final SendChatMessageUseCase sendChatMessageUseCase;
 	private final ObjectMapper objectMapper;
 	private final CorsProperties corsProperties;
+	private final WebSocketProperties webSocketProperties;
 
 	public WebSocketConfig(
 			JwtService jwtService,
@@ -34,7 +36,8 @@ public class WebSocketConfig implements WebSocketConfigurer {
 			RoomCommandDispatcher dispatcher,
 			SendChatMessageUseCase sendChatMessageUseCase,
 			ObjectMapper objectMapper,
-			CorsProperties corsProperties
+			CorsProperties corsProperties,
+			WebSocketProperties webSocketProperties
 	) {
 		this.jwtService = jwtService;
 		this.meetingRepository = meetingRepository;
@@ -44,12 +47,13 @@ public class WebSocketConfig implements WebSocketConfigurer {
 		this.sendChatMessageUseCase = sendChatMessageUseCase;
 		this.objectMapper = objectMapper;
 		this.corsProperties = corsProperties;
+		this.webSocketProperties = webSocketProperties;
 	}
 
 	@Override
 	public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
 		registry.addHandler(
-						new SignalingWebSocketHandler(runtimeRegistry, dispatcher, meetingRepository, userRepository, sendChatMessageUseCase, objectMapper),
+						new SignalingWebSocketHandler(runtimeRegistry, dispatcher, meetingRepository, userRepository, sendChatMessageUseCase, objectMapper, webSocketProperties),
 						"/ws/meetings/{meetingId}")
 				.addInterceptors(new SignalingHandshakeInterceptor(jwtService, meetingRepository))
 				.setAllowedOrigins(corsProperties.allowedOrigins().toArray(new String[0]));

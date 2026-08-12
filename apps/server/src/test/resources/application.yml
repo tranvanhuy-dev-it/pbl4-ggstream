@@ -19,6 +19,7 @@ app:
     heartbeat-interval-seconds: 1
     heartbeat-timeout-seconds: 4
     heartbeat-check-interval-ms: 300
+    reconnect-grace-seconds: 1
   turn:
     host: turn.test.invalid
     port: 3478

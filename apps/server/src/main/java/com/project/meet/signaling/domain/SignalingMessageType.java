@@ -6,6 +6,8 @@ public enum SignalingMessageType {
 
 	PARTICIPANT_JOINED,
 	PARTICIPANT_LEFT,
+	/** Sent to everyone else when a dropped participant reconnects within the grace period — same identity, new transport, no LEFT/JOINED flicker. Milestone 8. */
+	PARTICIPANT_RECONNECTED,
 
 	/** Relayed point-to-point via {@code targetId}; payload is opaque SDP/ICE data. Wired up starting Milestone 4. */
 	WEBRTC_OFFER,

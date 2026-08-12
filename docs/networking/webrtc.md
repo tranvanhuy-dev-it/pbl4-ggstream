@@ -42,6 +42,36 @@ coordination message: whichever participant has the lexicographically
 smaller `userId` always initiates, deterministically, for every pair. The
 other side just waits to receive an offer and answers it.
 
+## ICE restart (Milestone 8)
+
+A WebSocket reconnect (see
+[signaling.md](./signaling.md#reconnect-grace-period-milestone-8)) only
+recovers the signaling channel — the WebRTC media path is a separate UDP/TCP
+connection with its own failure mode, and can die (network change, NAT
+rebinding, wifi roam) independently of, or even while, signaling stays up.
+`RTCPeerConnection.connectionState` is the source of truth for that:
+
+- `"disconnected"` is often transient (ICE consistency checks briefly
+  failing, then recovering on their own within seconds) — `PeerConnectionManager`
+  deliberately does not react to it, to avoid restarting a connection that
+  was about to fix itself.
+- `"failed"` means the browser has already given up. At that point
+  `PeerConnectionManager` calls its own `restartIce(participantId)`, which
+  is `createOffer({ iceRestart: true })` followed by the normal
+  `setLocalDescription`/send-over-signaling flow — this re-runs ICE
+  candidate gathering and re-establishes a working pair without tearing
+  down and recreating the `RTCPeerConnection` (which would also lose the
+  negotiated codecs and DTLS/SRTP keys).
+- The same glare-avoidance rule from initial connect applies to restarts:
+  only the side that was originally the offerer (`PeerEntry.isInitiator`,
+  set once in `connect()`) sends the restart offer; the other side just
+  answers whatever offer arrives, exactly like the first connection.
+- A `PARTICIPANT_RECONNECTED` signaling event (sent to everyone except the
+  reconnecting user, see signaling.md) also triggers a `restartIce` call
+  for that peer as a proactive nudge — the WebSocket resuming seamlessly
+  doesn't guarantee the media path did too, so this covers the case where
+  `connectionState` hasn't (yet) flipped to `"failed"` on its own.
+
 ## Mesh-ready by construction (Milestone 6 confirms it)
 
 `PeerConnectionManager` was built as `Map<participantId, RTCPeerConnection>`

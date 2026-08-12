@@ -6,7 +6,15 @@ import type { SignalingEnvelope, SignalingMessageType } from "./types";
 // need to be in the same ballpark, not identical to the second.
 const HEARTBEAT_INTERVAL_MS = 10_000;
 
-export type ConnectionState = "connecting" | "open" | "closed";
+// Exponential backoff for reconnect attempts, capped at 10s — the backend's
+// grace period (WS_RECONNECT_GRACE_SECONDS, default 15s) is what actually
+// determines whether a reconnect resumes the same roster slot or looks like
+// a fresh join, so retrying faster than that comfortably covers a typical
+// wifi blip or tab suspend/resume.
+const RECONNECT_BASE_DELAY_MS = 1_000;
+const RECONNECT_MAX_DELAY_MS = 10_000;
+
+export type ConnectionState = "connecting" | "open" | "reconnecting" | "closed";
 
 export interface SignalingClientHandlers {
   onMessage: (envelope: SignalingEnvelope) => void;
@@ -15,13 +23,16 @@ export interface SignalingClientHandlers {
 
 /**
  * Thin wrapper around the native WebSocket API for one meeting's signaling
- * connection. Deliberately does not attempt to reconnect on drop — that's
- * Milestone 8 (reconnect + session resume). For now a dropped connection
- * just reports "closed" and stays closed.
+ * connection. Automatically retries with exponential backoff after any
+ * unexpected drop (Milestone 8) — "closed" only ever means the caller
+ * explicitly called close(), never a transient network blip.
  */
 export class SignalingClient {
   private ws: WebSocket | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempts = 0;
+  private manualClose = false;
 
   constructor(
     private readonly meetingId: string,
@@ -30,13 +41,15 @@ export class SignalingClient {
   ) {}
 
   connect(): void {
-    this.handlers.onStateChange("connecting");
+    this.manualClose = false;
+    this.handlers.onStateChange(this.reconnectAttempts > 0 ? "reconnecting" : "connecting");
 
     const url = `${WS_URL}/ws/meetings/${this.meetingId}?token=${encodeURIComponent(this.token)}`;
     const ws = new WebSocket(url);
     this.ws = ws;
 
     ws.onopen = () => {
+      this.reconnectAttempts = 0;
       this.handlers.onStateChange("open");
       this.startHeartbeat();
     };
@@ -51,8 +64,19 @@ export class SignalingClient {
 
     ws.onclose = () => {
       this.stopHeartbeat();
-      this.handlers.onStateChange("closed");
+      if (this.manualClose) {
+        this.handlers.onStateChange("closed");
+        return;
+      }
+      this.scheduleReconnect();
     };
+  }
+
+  private scheduleReconnect(): void {
+    this.handlers.onStateChange("reconnecting");
+    const delay = Math.min(RECONNECT_BASE_DELAY_MS * 2 ** this.reconnectAttempts, RECONNECT_MAX_DELAY_MS);
+    this.reconnectAttempts += 1;
+    this.reconnectTimer = setTimeout(() => this.connect(), delay);
   }
 
   send(message: { type: SignalingMessageType; requestId?: string; targetId?: string; payload?: unknown }): void {
@@ -74,7 +98,12 @@ export class SignalingClient {
   }
 
   close(): void {
+    this.manualClose = true;
     this.stopHeartbeat();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     this.ws?.close(1000, "Client closed");
     this.ws = null;
   }

@@ -249,3 +249,32 @@ whether or not a Coturn server has actually been deployed yet. See
 [networking/ice-stun-turn.md](../networking/ice-stun-turn.md#turn-credentials-milestone-5)
 and [networking/turn-setup.md](../networking/turn-setup.md) for the
 Coturn side of this.
+
+## Reconnect grace period (Milestone 8)
+
+`RoomCommandDispatcher` grew a second entry point,
+`scheduleDispatch(meetingId, command, delay, unit)`, alongside its existing
+`dispatch(...)`: it runs `command` on a tiny dedicated
+`ScheduledExecutorService` timer thread after `delay`, but the command
+itself still only ever executes via a normal `dispatch(...)` call — so it
+lands in that room's regular serialized queue like everything else, just
+later. This is what backs the reconnect grace period: on an unexpected
+WebSocket close (see
+[networking/signaling.md](../networking/signaling.md#reconnect-grace-period-milestone-8)),
+`SignalingWebSocketHandler` marks the `RuntimeParticipant` pending-removal
+and schedules its actual removal for `WS_RECONNECT_GRACE_SECONDS` later
+instead of removing it inline.
+
+`MeetingRuntime.reconnect(userId, newSession)` is the other half: it looks
+up an existing participant by `userId` (not session id — the whole point is
+that the old session is gone), re-points it at the new `WebSocketSession`,
+and re-keys the internal `participantsBySessionId` map accordingly. Because
+the delayed removal command looks the participant up by the *old* session
+id when it finally runs, a successful reconnect makes it a silent no-op —
+no separate "cancel this scheduled task" bookkeeping needed, the lookup
+failing is the cancellation.
+
+Both executors added by this (`RoomCommandDispatcher`'s existing
+virtual-thread-per-task pool, plus the new scheduling thread) are shut down
+together in the same `@PreDestroy` method, keeping lifecycle ownership in
+one place.

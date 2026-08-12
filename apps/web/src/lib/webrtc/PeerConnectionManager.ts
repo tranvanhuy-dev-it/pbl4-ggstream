@@ -22,6 +22,14 @@ interface PeerEntry {
   negotiationReady: boolean;
   screenSender: RTCRtpSender | null;
   primaryRemoteStreamId: string | null;
+  /**
+   * True only for the side that called connect() first for this pair — the
+   * same "smaller userId offers" glare-avoidance rule that picked the
+   * original offerer also governs who's allowed to send an ICE-restart
+   * offer later, so a recovering connection doesn't get two competing
+   * restart offers from both sides at once.
+   */
+  isInitiator: boolean;
 }
 
 /**
@@ -52,10 +60,31 @@ export class PeerConnectionManager {
   /** Initiator side of a new connection — ensures the peer exists (creating it adds local tracks) and sends the initial offer. */
   async connect(participantId: string): Promise<void> {
     const entry = this.getOrCreatePeer(participantId);
+    entry.isInitiator = true;
     const offer = await entry.pc.createOffer();
     await entry.pc.setLocalDescription(offer);
     entry.negotiationReady = true;
     this.options.onOffer(participantId, offer);
+  }
+
+  /**
+   * Re-negotiates a peer's connection with a fresh ICE gathering pass —
+   * recovers a connection whose underlying network path changed (wifi
+   * roam, reconnect after a drop) without tearing down and recreating the
+   * whole RTCPeerConnection (which would also lose codec/DTLS state).
+   * Only the original initiator side sends the restart offer; the other
+   * side just answers whatever offer arrives, same as initial connect.
+   */
+  async restartIce(participantId: string): Promise<void> {
+    const entry = this.peers.get(participantId);
+    if (!entry || !entry.isInitiator) return;
+    try {
+      const offer = await entry.pc.createOffer({ iceRestart: true });
+      await entry.pc.setLocalDescription(offer);
+      this.options.onOffer(participantId, offer);
+    } catch {
+      // best-effort — if the connection is still broken, connectionstatechange fires again
+    }
   }
 
   async handleOffer(participantId: string, offer: RTCSessionDescriptionInit): Promise<RTCSessionDescriptionInit> {
@@ -159,7 +188,7 @@ export class PeerConnectionManager {
     if (existing) return existing;
 
     const pc = new RTCPeerConnection({ iceServers: this.options.iceServers });
-    const entry: PeerEntry = { pc, negotiationReady: false, screenSender: null, primaryRemoteStreamId: null };
+    const entry: PeerEntry = { pc, negotiationReady: false, screenSender: null, primaryRemoteStreamId: null, isInitiator: false };
 
     this.options.localStream.getTracks().forEach((track) => pc.addTrack(track, this.options.localStream));
     if (this.screenStream) {
@@ -201,9 +230,16 @@ export class PeerConnectionManager {
       }
     };
 
-    if (this.options.onConnectionStateChange) {
-      pc.onconnectionstatechange = () => this.options.onConnectionStateChange!(participantId, pc.connectionState);
-    }
+    pc.onconnectionstatechange = () => {
+      this.options.onConnectionStateChange?.(participantId, pc.connectionState);
+      // "disconnected" is often transient (a brief network hiccup that
+      // resolves itself within seconds) and restarting ICE for every one
+      // would be overly aggressive; "failed" means the browser has already
+      // given up, so that's the point where a restart is worth attempting.
+      if (pc.connectionState === "failed") {
+        void this.restartIce(participantId);
+      }
+    };
 
     this.peers.set(participantId, entry);
     return entry;

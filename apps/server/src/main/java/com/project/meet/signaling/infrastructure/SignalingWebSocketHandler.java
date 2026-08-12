@@ -2,6 +2,7 @@ package com.project.meet.signaling.infrastructure;
 
 import com.project.meet.chat.api.ChatMessageResponse;
 import com.project.meet.chat.application.SendChatMessageUseCase;
+import com.project.meet.common.config.WebSocketProperties;
 import com.project.meet.common.security.AuthenticatedUser;
 import com.project.meet.meeting.domain.Meeting;
 import com.project.meet.meeting.domain.MeetingAccessType;
@@ -28,6 +29,7 @@ import tools.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 public class SignalingWebSocketHandler extends TextWebSocketHandler {
 
@@ -39,6 +41,7 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
 	private final UserRepository userRepository;
 	private final SendChatMessageUseCase sendChatMessageUseCase;
 	private final ObjectMapper objectMapper;
+	private final WebSocketProperties properties;
 
 	public SignalingWebSocketHandler(
 			MeetingRuntimeRegistry runtimeRegistry,
@@ -46,7 +49,8 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
 			MeetingRepository meetingRepository,
 			UserRepository userRepository,
 			SendChatMessageUseCase sendChatMessageUseCase,
-			ObjectMapper objectMapper
+			ObjectMapper objectMapper,
+			WebSocketProperties properties
 	) {
 		this.runtimeRegistry = runtimeRegistry;
 		this.dispatcher = dispatcher;
@@ -54,6 +58,7 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
 		this.userRepository = userRepository;
 		this.sendChatMessageUseCase = sendChatMessageUseCase;
 		this.objectMapper = objectMapper;
+		this.properties = properties;
 	}
 
 	@Override
@@ -74,7 +79,14 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
 	public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
 		UUID meetingId = meetingId(session);
 		log.info("WEBSOCKET_DISCONNECTED meetingId={} status={}", meetingId, status);
-		dispatcher.dispatch(meetingId, () -> handleLeave(session, meetingId));
+		// A clean, client-initiated close (code 1000 — voluntary leave,
+		// host-remove, waiting-room rejection all use this) skips the grace
+		// period and is removed immediately. Anything else (network drop,
+		// tab crash, heartbeat timeout) is treated as a possibly-temporary
+		// disconnect that a reconnect within the grace window can undo — see
+		// handleDisconnect.
+		boolean clientInitiated = status.getCode() == CloseStatus.NORMAL.getCode();
+		dispatcher.dispatch(meetingId, () -> handleDisconnect(session, meetingId, clientInitiated));
 	}
 
 	@Override
@@ -95,6 +107,41 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
 		boolean isHost = meeting.isHostedBy(user.userId());
 
 		MeetingRuntime runtime = runtimeRegistry.getOrCreate(meetingId);
+
+		// If this user was already an active participant — either still
+		// connected via another session, or (far more commonly) mid-grace-
+		// period after an unexpected disconnect — this is a reconnect, not a
+		// fresh join: same identity, new transport. Re-point their existing
+		// RuntimeParticipant at the new session instead of adding a second
+		// roster entry, and skip the JOIN broadcast that would otherwise
+		// flicker PARTICIPANT_LEFT/JOINED for everyone else.
+		RuntimeParticipant reconnected = runtime.reconnect(user.userId(), session);
+		if (reconnected != null) {
+			log.info("WEBSOCKET_RECONNECTED meetingId={} userId={}", meetingId, user.userId());
+			// The reconnecting client's own in-memory state may be gone
+			// entirely (e.g. a full page reload after the network came
+			// back), so it can't assume it still knows the roster — resend
+			// the same snapshot a fresh join would get.
+			for (RuntimeParticipant existing : runtime.participants()) {
+				if (existing == reconnected) {
+					continue;
+				}
+				send(session, SignalingEnvelope.broadcast(SignalingMessageType.PARTICIPANT_JOINED, meetingId,
+						existing.getUserId(), participantPayload(existing)));
+			}
+			// Everyone else never saw a LEFT for this user, so no JOINED
+			// either — just a signal that this specific peer's WebRTC
+			// connection needs an ICE restart, since the underlying network
+			// path just changed.
+			broadcast(runtime, session.getId(),
+					SignalingEnvelope.broadcast(SignalingMessageType.PARTICIPANT_RECONNECTED, meetingId, user.userId(), participantPayload(reconnected)));
+			if (reconnected.getRole() == ParticipantRole.HOST) {
+				for (WaitingParticipant waiting : runtime.waitingParticipants()) {
+					send(session, SignalingEnvelope.broadcast(SignalingMessageType.PARTICIPANT_WAITING, meetingId, waiting.getUserId(), waitingPayload(waiting)));
+				}
+			}
+			return;
+		}
 
 		// Approval-required meetings hold non-host joiners in a waiting lane —
 		// no roster snapshot, no broadcast to others — until the host approves
@@ -133,7 +180,7 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
 		}
 	}
 
-	private void handleLeave(WebSocketSession session, UUID meetingId) {
+	private void handleDisconnect(WebSocketSession session, UUID meetingId, boolean clientInitiated) {
 		MeetingRuntime runtime = runtimeRegistry.get(meetingId);
 		if (runtime == null) {
 			return;
@@ -142,21 +189,59 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
 		WaitingParticipant waiting = runtime.removeWaiting(session.getId());
 		if (waiting != null) {
 			sendToHosts(runtime, SignalingEnvelope.broadcast(SignalingMessageType.PARTICIPANT_LEFT, meetingId, waiting.getUserId(), waitingPayload(waiting)));
-			if (runtime.isEmpty()) {
-				runtimeRegistry.evictIfEmpty(meetingId);
-				dispatcher.dropRoom(meetingId);
-			}
+			evictRoomIfEmpty(runtime, meetingId);
 			return;
 		}
 
-		RuntimeParticipant participant = runtime.remove(session.getId());
+		RuntimeParticipant participant = runtime.get(session.getId());
 		if (participant == null) {
 			return;
 		}
 
-		broadcast(runtime, session.getId(),
-				SignalingEnvelope.broadcast(SignalingMessageType.PARTICIPANT_LEFT, meetingId, participant.getUserId(), participantPayload(participant)));
+		if (clientInitiated || properties.reconnectGraceSeconds() <= 0) {
+			finalizeRemoval(runtime, meetingId, session.getId());
+			return;
+		}
 
+		// Keep the participant in the roster (so their tile doesn't vanish
+		// for anyone) but mark them pending removal, and schedule the actual
+		// removal for after the grace period. A reconnect before then
+		// (MeetingRuntime.reconnect) re-points this same RuntimeParticipant
+		// at a new session id, so when expireDisconnect eventually runs and
+		// looks up this session id, it will find nothing there — the
+		// reconnect already moved the roster entry to a different key — and
+		// no-ops instead of removing them.
+		participant.markDisconnected();
+		String sessionId = session.getId();
+		dispatcher.scheduleDispatch(meetingId, () -> expireDisconnect(meetingId, sessionId),
+				properties.reconnectGraceSeconds(), TimeUnit.SECONDS);
+	}
+
+	private void expireDisconnect(UUID meetingId, String sessionId) {
+		MeetingRuntime runtime = runtimeRegistry.get(meetingId);
+		if (runtime == null) {
+			return;
+		}
+		RuntimeParticipant participant = runtime.get(sessionId);
+		if (participant == null || !participant.isPendingRemoval()) {
+			// Either already removed, or a reconnect already re-keyed this
+			// participant under a new session id — nothing to do.
+			return;
+		}
+		finalizeRemoval(runtime, meetingId, sessionId);
+	}
+
+	private void finalizeRemoval(MeetingRuntime runtime, UUID meetingId, String sessionId) {
+		RuntimeParticipant participant = runtime.remove(sessionId);
+		if (participant == null) {
+			return;
+		}
+		broadcast(runtime, sessionId,
+				SignalingEnvelope.broadcast(SignalingMessageType.PARTICIPANT_LEFT, meetingId, participant.getUserId(), participantPayload(participant)));
+		evictRoomIfEmpty(runtime, meetingId);
+	}
+
+	private void evictRoomIfEmpty(MeetingRuntime runtime, UUID meetingId) {
 		if (runtime.isEmpty()) {
 			runtimeRegistry.evictIfEmpty(meetingId);
 			dispatcher.dropRoom(meetingId);

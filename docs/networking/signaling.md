@@ -110,9 +110,44 @@ the session triggers the handler's normal `afterConnectionClosed` cleanup
 path, so the reaper doesn't duplicate any room-state or broadcast logic —
 it only decides *when* a session counts as dead.
 
-Reconnection (a client that reconnects after a timeout resuming its
-session rather than being treated as a brand-new participant) is explicitly
-out of scope here — that's Milestone 8.
+## Reconnect grace period (Milestone 8)
+
+`afterConnectionClosed` doesn't remove a participant immediately for every
+close — only for a clean, client-initiated one (WebSocket close code 1000,
+which covers the "leave" button, host-remove, and waiting-room rejection,
+since all three explicitly close with that code). Anything else — a network
+drop, a suspended tab, `HeartbeatReaper` closing a stale session — is
+treated as a *possibly temporary* disconnect:
+
+1. The `RuntimeParticipant` stays in the room's roster (so nobody else sees
+   them vanish) but is marked `pendingRemoval` via
+   `RuntimeParticipant.markDisconnected()`.
+2. `RoomCommandDispatcher.scheduleDispatch` queues a removal command for
+   `WS_RECONNECT_GRACE_SECONDS` later (default 15s), still running through
+   the same per-room serialized queue as every other command — just
+   delayed.
+3. If the same user (matched by `userId`, not session id) opens a new
+   WebSocket connection to the same meeting before that timer fires,
+   `MeetingRuntime.reconnect()` re-points the existing `RuntimeParticipant`
+   at the new session (new map key, same object) and cancels the pending
+   removal implicitly — `expireDisconnect` looks the participant up by the
+   *old* session id, finds nothing there anymore, and no-ops.
+4. A successful reconnect sends the reconnecting client a fresh roster
+   snapshot (their own client-side state may be gone entirely, e.g. after a
+   full page reload) and broadcasts `PARTICIPANT_RECONNECTED` — not
+   `PARTICIPANT_LEFT` + `PARTICIPANT_JOINED` — to everyone else, since they
+   never saw a LEFT for this user in the first place. If the grace period
+   expires with no reconnect, `PARTICIPANT_LEFT` fires exactly as before.
+
+The waiting-room lane does **not** get this grace period — a disconnect
+while waiting is removed immediately; reconnecting just re-enters the
+waiting lane and asks again. Not worth the added complexity for a
+pre-admission state.
+
+This only resumes the *signaling* session/roster slot. The WebRTC media
+path is a separate concern — see
+[webrtc.md](./webrtc.md#ice-restart-milestone-8) for how peer connections
+recover independently once signaling is back.
 
 ## Waiting room (Milestone 7)
 

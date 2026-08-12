@@ -1,5 +1,7 @@
 package com.project.meet.signaling.application;
 
+import org.springframework.web.socket.WebSocketSession;
+
 import java.util.Collection;
 import java.util.Map;
 import java.util.UUID;
@@ -44,6 +46,32 @@ public class MeetingRuntime {
 
 	public Collection<RuntimeParticipant> participants() {
 		return participantsBySessionId.values();
+	}
+
+	public RuntimeParticipant findActiveByUserId(UUID userId) {
+		return participantsBySessionId.values().stream()
+				.filter(p -> p.getUserId().equals(userId))
+				.findFirst()
+				.orElse(null);
+	}
+
+	/**
+	 * Re-points an existing participant (found by user id, regardless of
+	 * whether they're mid-grace-period after a drop) at a brand new
+	 * WebSocket session, keyed under the new session's id. Returns
+	 * {@code null} if no matching participant exists — i.e. this is a
+	 * genuinely new join, not a reconnect, and the caller should fall back
+	 * to the normal join flow.
+	 */
+	public RuntimeParticipant reconnect(UUID userId, WebSocketSession newSession) {
+		RuntimeParticipant existing = findActiveByUserId(userId);
+		if (existing == null) {
+			return null;
+		}
+		participantsBySessionId.remove(existing.getSession().getId());
+		existing.reconnect(newSession);
+		participantsBySessionId.put(newSession.getId(), existing);
+		return existing;
 	}
 
 	public void addWaiting(String sessionId, WaitingParticipant waiting) {
