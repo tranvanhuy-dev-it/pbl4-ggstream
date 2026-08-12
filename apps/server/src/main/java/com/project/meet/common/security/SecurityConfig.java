@@ -43,6 +43,11 @@ public class SecurityConfig {
 						.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 						.requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
 						.requestMatchers("/api/v1/auth/**").permitAll()
+						// The WebSocket handshake authenticates itself via a JWT query
+						// param, verified in SignalingHandshakeInterceptor — browsers
+						// can't attach an Authorization header to a WS upgrade request,
+						// so this can't go through the same JwtAuthenticationFilter path.
+						.requestMatchers("/ws/**").permitAll()
 						.anyRequest().authenticated()
 				)
 				.exceptionHandling(handling -> handling

@@ -15,8 +15,8 @@ src/
 ├── components/      # shared, cross-feature UI primitives
 ├── hooks/           # shared, cross-feature hooks
 ├── lib/
-│   ├── api/          # REST client (this milestone)
-│   ├── websocket/     # signaling client (Milestone 3)
+│   ├── api/          # REST client
+│   ├── websocket/     # signaling client
 │   └── webrtc/        # PeerConnectionManager (Milestone 4+)
 ├── stores/          # client state, added when a feature needs shared state
 └── types/           # shared TypeScript types
@@ -24,9 +24,9 @@ src/
 
 As with the backend, folders are created when the feature that needs them
 lands (see the milestone order in the root README), not pre-scaffolded
-empty. `features/auth` (Milestone 1) and `features/meeting` /
-`features/lobby` (Milestone 2) exist now; `lib/websocket` and `lib/webrtc`
-land with Milestone 3/4.
+empty. `features/auth` (Milestone 1), `features/meeting` / `features/lobby`
+(Milestone 2), and `lib/websocket` (Milestone 3) exist now; `lib/webrtc`
+lands with Milestone 4.
 
 ## Meeting & lobby (Milestone 2)
 
@@ -41,11 +41,25 @@ land with Milestone 3/4.
   WebRTC-adjacent browser API in the app so far; `RTCPeerConnection` itself
   doesn't appear until Milestone 4, layered on top of the same stream this
   hook produces.
-- `features/meeting/components/MeetingRoomView.tsx` polls
-  `GET .../participants` every 4s as a stand-in for realtime updates —
-  explicitly temporary, replaced by `PARTICIPANT_JOINED`/`PARTICIPANT_LEFT`
-  WebSocket events once signaling exists (Milestone 3). Documented in the
-  component itself so it isn't mistaken for the intended final design.
+## Signaling (Milestone 3)
+
+- `lib/websocket/signalingClient.ts` — a thin wrapper around the native
+  `WebSocket` API for one meeting's connection: connects to
+  `${NEXT_PUBLIC_WS_URL}/ws/meetings/{meetingId}?token=...`, sends an
+  application-level `PING` every 10s, and hands every parsed envelope to a
+  caller-supplied handler. No auto-reconnect on drop — that's Milestone 8;
+  today a dropped connection just reports `"closed"` and stays that way.
+- `features/meeting/hooks/useMeetingSocket.ts` — the React-facing wrapper:
+  opens the connection for a `(meetingId, token)` pair, exposes connection
+  `status`, and forwards every envelope to an `onMessage` callback. Holds no
+  participant state itself, so it stays reusable once
+  `WEBRTC_OFFER`/`ANSWER`/`ICE_CANDIDATE` routing lands in Milestone 4 — the
+  caller decides what each event type means.
+- `features/meeting/components/MeetingRoomView.tsx` seeds its roster once
+  from `GET .../participants` (REST is the source of truth for "who's here
+  at page-load"), then applies `PARTICIPANT_JOINED`/`PARTICIPANT_LEFT`
+  events from the socket as deltas from that point forward — replacing the
+  4s-polling placeholder from Milestone 2.
 
 ## Why `page.tsx` stays thin
 

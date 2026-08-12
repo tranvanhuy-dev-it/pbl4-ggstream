@@ -18,7 +18,7 @@ com.project.meet
 ├── user/              # User entity, UserRepository, GET /users/me
 ├── meeting/           # Meeting entity, create/get/end use cases, code generator
 ├── participant/       # MeetingParticipant entity, join/leave/list use cases
-├── signaling/         # Milestone 3
+├── signaling/         # WebSocket handler, envelope routing, room concurrency, heartbeat
 ├── chat/              # Milestone 7
 ├── media/             # media abstraction (Mesh → SFU), Milestone 4+
 └── MeetApplication.java
@@ -54,9 +54,9 @@ We deliberately do **not** wrap `spring.datasource.*` in a custom
 `DatabaseProperties` class — Spring Boot's `DataSourceProperties` already is
 that typed configuration, and duplicating it would just be indirection with
 no benefit. Custom `@ConfigurationProperties` records are added only for
-settings Spring Boot doesn't already model: `CorsProperties`, `JwtProperties`
-now, `TurnProperties` (Milestone 5), `WebSocketProperties`
-(heartbeat/reconnect tuning, Milestone 3/8).
+settings Spring Boot doesn't already model: `CorsProperties`, `JwtProperties`,
+`WebSocketProperties` (heartbeat interval/timeout) now, `TurnProperties`
+(Milestone 5).
 
 No `System.getenv(...)` calls anywhere in application code.
 
@@ -188,15 +188,27 @@ negotiated entirely client-side via signaling); Milestone 11 adds an
 alongside the `meeting` domain in Milestone 2/4, documented here ahead of time
 so the intent is clear before it's built.
 
-## Concurrency model (introduced Milestone 3+)
+## Signaling & concurrency model (Milestone 3)
 
-Runtime meeting state (who's in the room, mute state, active screen share)
-lives in memory, not the database — see
-[database/schema.md](../database/schema.md#what-is-not-persisted). Each
-meeting room processes its signaling commands (JOIN, OFFER, ICE_CANDIDATE,
-MUTE, ...) through a per-room ordered queue, so that different rooms run
-fully concurrently while commands within one room are serialized to avoid
-races (e.g. two participants joining at the same instant both reading a
-stale participant list). Full detail lands in
-[networking/signaling.md](../networking/signaling.md) once Milestone 3 is
-implemented.
+Runtime meeting state (`MeetingRuntime`/`MeetingRuntimeRegistry`, package
+`signaling.application`) — who's connected right now, keyed by WebSocket
+session — lives in memory, not the database, since it changes many times
+per second and has zero value once a meeting ends. See
+[database/schema.md](../database/schema.md#what-is-not-persisted).
+
+Each meeting room processes its signaling commands (join, leave, PING,
+relay) through `RoomCommandDispatcher`: different rooms run fully
+concurrently (one chained `CompletableFuture` per room, all sharing a
+`newVirtualThreadPerTaskExecutor()`), while commands within one room are
+strictly ordered — so two participants joining at the same instant can't
+both observe a stale room snapshot. Full detail, including why this isn't a
+thread-per-room design, is in
+[networking/signaling.md](../networking/signaling.md#concurrency-model).
+
+WebSocket auth happens at handshake time (`SignalingHandshakeInterceptor`),
+not through `JwtAuthenticationFilter` — browsers can't attach an
+`Authorization` header to a WebSocket upgrade request, so the JWT travels
+as a query parameter instead and `/ws/**` is excluded from the normal
+header-based auth path in `SecurityConfig`. See
+[networking/signaling.md](../networking/signaling.md#authentication-on-connect)
+and [api/websocket-protocol.md](../api/websocket-protocol.md).

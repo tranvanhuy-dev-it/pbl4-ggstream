@@ -1,0 +1,34 @@
+package com.project.meet.signaling.domain;
+
+public enum SignalingMessageType {
+	MEETING_JOIN,
+	MEETING_LEAVE,
+
+	PARTICIPANT_JOINED,
+	PARTICIPANT_LEFT,
+
+	/** Relayed point-to-point via {@code targetId}; payload is opaque SDP/ICE data. Wired up starting Milestone 4. */
+	WEBRTC_OFFER,
+	WEBRTC_ANSWER,
+	ICE_CANDIDATE,
+
+	MIC_STATE_CHANGED,
+	CAMERA_STATE_CHANGED,
+
+	SCREEN_SHARE_STARTED,
+	SCREEN_SHARE_STOPPED,
+
+	CHAT_MESSAGE,
+
+	PARTICIPANT_WAITING,
+	PARTICIPANT_APPROVED,
+	PARTICIPANT_REJECTED,
+
+	HOST_MUTE_PARTICIPANT,
+	HOST_REMOVE_PARTICIPANT,
+
+	PING,
+	PONG,
+
+	ERROR
+}

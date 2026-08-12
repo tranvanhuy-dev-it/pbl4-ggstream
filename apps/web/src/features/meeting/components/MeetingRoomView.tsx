@@ -4,16 +4,16 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/features/auth/context/AuthContext";
 import * as meetingApi from "@/features/meeting/api/meetingApi";
-import type { Meeting, Participant } from "@/features/meeting/api/meetingApi";
-
-const PARTICIPANTS_POLL_INTERVAL_MS = 4000;
+import type { Meeting } from "@/features/meeting/api/meetingApi";
+import { useMeetingSocket } from "@/features/meeting/hooks/useMeetingSocket";
+import type { ParticipantPresencePayload, SignalingEnvelope } from "@/lib/websocket/types";
 
 export function MeetingRoomView({ code }: { code: string }) {
   const { status: authStatus, user, token } = useAuth();
   const router = useRouter();
 
   const [meeting, setMeeting] = useState<Meeting | null>(null);
-  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [participants, setParticipants] = useState<Map<string, ParticipantPresencePayload>>(new Map());
   const [loadError, setLoadError] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
 
@@ -41,28 +41,45 @@ export function MeetingRoomView({ code }: { code: string }) {
     };
   }, [authStatus, token, code]);
 
+  // Seed the roster from REST (source of truth for "who's here right now"
+  // at page-load time) — the WebSocket below only carries deltas from that
+  // point forward, it has no way to describe the room's starting state on
+  // its own.
   useEffect(() => {
     if (!meeting || !token) return;
     let cancelled = false;
 
-    // Polling placeholder — replaced by realtime PARTICIPANT_JOINED /
-    // PARTICIPANT_LEFT WebSocket events once signaling lands (Milestone 3).
-    async function refresh() {
-      try {
-        const list = await meetingApi.listParticipants(token!, meeting!.id);
-        if (!cancelled) setParticipants(list);
-      } catch {
-        // transient — next poll will retry
-      }
-    }
+    meetingApi.listParticipants(token, meeting.id).then((list) => {
+      if (cancelled) return;
+      setParticipants(
+        new Map(list.filter((p) => p.userId).map((p) => [p.userId as string, {
+          userId: p.userId as string,
+          displayName: p.displayName,
+          role: p.role,
+        }])),
+      );
+    });
 
-    refresh();
-    const interval = setInterval(refresh, PARTICIPANTS_POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
-      clearInterval(interval);
     };
   }, [meeting, token]);
+
+  const handleSignalingMessage = useCallback((envelope: SignalingEnvelope) => {
+    if (envelope.type === "PARTICIPANT_JOINED" && envelope.payload) {
+      const presence = envelope.payload as ParticipantPresencePayload;
+      setParticipants((prev) => new Map(prev).set(presence.userId, presence));
+    } else if (envelope.type === "PARTICIPANT_LEFT" && envelope.payload) {
+      const presence = envelope.payload as ParticipantPresencePayload;
+      setParticipants((prev) => {
+        const next = new Map(prev);
+        next.delete(presence.userId);
+        return next;
+      });
+    }
+  }, []);
+
+  const { status: socketStatus } = useMeetingSocket(meeting?.id ?? null, token, handleSignalingMessage);
 
   const handleLeave = useCallback(async () => {
     if (!meeting || !token) return;
@@ -101,23 +118,38 @@ export function MeetingRoomView({ code }: { code: string }) {
   }
 
   const isHost = user?.id === meeting.hostId;
+  const participantList = Array.from(participants.values());
 
   return (
     <main className="flex min-h-screen flex-col gap-8 px-6 py-10">
       <header className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold tracking-tight">{meeting.title}</h1>
-        <p className="text-sm text-muted">Code: {meeting.code}</p>
+        <div className="flex items-center gap-2 text-sm text-muted">
+          <span>Code: {meeting.code}</span>
+          <span aria-hidden="true">·</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              className={`h-1.5 w-1.5 rounded-full ${
+                socketStatus === "open" ? "bg-green-500" : socketStatus === "connecting" ? "bg-yellow-400" : "bg-red-500"
+              }`}
+            />
+            {socketStatus === "open" ? "Live" : socketStatus === "connecting" ? "Connecting…" : "Disconnected"}
+          </span>
+        </div>
       </header>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-medium text-muted">Participants ({participants.length})</h2>
+        <h2 className="text-sm font-medium text-muted">Participants ({participantList.length})</h2>
         <ul className="flex flex-col gap-2">
-          {participants.map((p) => (
+          {participantList.map((p) => (
             <li
-              key={p.id}
+              key={p.userId}
               className="flex items-center justify-between rounded-lg border border-card-border bg-card px-4 py-3"
             >
-              <span className="text-sm font-medium">{p.displayName}</span>
+              <span className="text-sm font-medium">
+                {p.displayName}
+                {p.userId === user?.id && <span className="text-muted"> (you)</span>}
+              </span>
               <span className="text-xs uppercase tracking-wide text-muted">{p.role.replace("_", "-")}</span>
             </li>
           ))}

@@ -15,6 +15,10 @@ app:
   jwt:
     secret: test-only-secret-not-for-production-use-1234567890
     expiration-minutes: 60
+  websocket:
+    heartbeat-interval-seconds: 1
+    heartbeat-timeout-seconds: 4
+    heartbeat-check-interval-ms: 300
 
 # NOTE: this file fully replaces src/main/resources/application.yml on the
 # test classpath (Spring Boot loads the first "application.yml" it finds —
