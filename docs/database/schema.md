@@ -17,12 +17,12 @@ are never used against a real database, since they can drop data.
 Once the schema stabilizes, this can move to Flyway/Liquibase-managed
 migrations without changing anything else in the architecture.
 
-## Tables (planned — introduced as their milestone lands)
+## Tables
 
-None yet — Milestone 0 has no entities. Milestone 1 adds `users`, Milestone 2
-adds `meetings`, `meeting_participants`, Milestone 7 adds `chat_messages`.
+`users` is implemented (Milestone 1). `meetings`/`meeting_participants`
+(Milestone 2) and `chat_messages` (Milestone 7) are still planned.
 
-### `users` (Milestone 1)
+### `users`
 
 | column         | type      | notes                       |
 |----------------|-----------|------------------------------|

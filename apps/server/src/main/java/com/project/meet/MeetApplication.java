@@ -1,7 +1,8 @@
 package com.project.meet;
 
-import org.springframework.boot.SpringApplication;
+import me.paulschwarz.springdotenv.spring.DotenvApplicationInitializer;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 @SpringBootApplication
@@ -9,7 +10,9 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 public class MeetApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(MeetApplication.class, args);
+		new SpringApplicationBuilder(MeetApplication.class)
+				.initializers(new DotenvApplicationInitializer())
+				.run(args);
 	}
 
 }

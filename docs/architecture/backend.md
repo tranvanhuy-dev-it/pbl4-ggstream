@@ -12,10 +12,10 @@ com.project.meet
 ├── common/            # cross-cutting: config, exception, security, web
 │   ├── config/        # typed @ConfigurationProperties, CORS, web config
 │   ├── exception/      # ApiException hierarchy, GlobalExceptionHandler
-│   ├── security/       # SecurityFilterChain
+│   ├── security/       # JWT filter chain, JwtService, PasswordEncoder
 │   └── web/             # RequestIdFilter (request correlation)
-├── auth/              # Milestone 1
-├── user/              # Milestone 1
+├── auth/              # register/login use cases, JWT issuance
+├── user/              # User entity, UserRepository, GET /users/me
 ├── meeting/           # Milestone 2
 ├── participant/       # Milestone 2
 ├── signaling/         # Milestone 3
@@ -54,11 +54,20 @@ We deliberately do **not** wrap `spring.datasource.*` in a custom
 `DatabaseProperties` class — Spring Boot's `DataSourceProperties` already is
 that typed configuration, and duplicating it would just be indirection with
 no benefit. Custom `@ConfigurationProperties` records are added only for
-settings Spring Boot doesn't already model: `CorsProperties` now,
-`JwtProperties` (Milestone 1), `TurnProperties` (Milestone 5),
-`WebSocketProperties` (heartbeat/reconnect tuning, Milestone 3/8).
+settings Spring Boot doesn't already model: `CorsProperties`, `JwtProperties`
+now, `TurnProperties` (Milestone 5), `WebSocketProperties`
+(heartbeat/reconnect tuning, Milestone 3/8).
 
 No `System.getenv(...)` calls anywhere in application code.
+
+`spring-dotenv` doesn't carry Spring Boot auto-registration metadata in the
+version this project uses, so it's wired explicitly in `MeetApplication.main`
+via `SpringApplicationBuilder(...).initializers(new
+DotenvApplicationInitializer())` rather than relying on classpath
+auto-detection. Tests don't go through `main()`, so they never read `.env` —
+`src/test/resources/application.yml` sets every property a test needs
+directly (including `app.jwt.secret`, since `JwtService`'s constructor fails
+fast if it's blank).
 
 ## Error handling
 
@@ -96,12 +105,42 @@ request can be grepped together.
 `BackendStatus` component polls, and what `curl` should hit to confirm the
 backend is up.
 
-## Security (current state)
+## Authentication (Milestone 1)
 
-`SecurityConfig` at this milestone is intentionally minimal: stateless
-session policy, CSRF disabled (pure JSON API, no cookie-based auth yet), all
-requests permitted. JWT authentication, `/api/v1/auth/**` public endpoints,
-and per-endpoint authorization rules land in Milestone 1.
+Stateless JWT — no server-side session, no `HttpSession`. Flow:
+
+1. `POST /api/v1/auth/register` or `/login` (both public) return an
+   `AuthResponse` with a signed JWT (`JwtService`, HS512, key from
+   `JWT_SECRET`, HMAC key material is just the secret's raw UTF-8 bytes —
+   fine for HS512 as long as the secret is reasonably long, no separate
+   key-derivation step). Subject claim is the user's UUID; `email` is a
+   custom claim. Expiry is `JWT_EXPIRATION_MINUTES` (default 24h).
+2. Every subsequent request carries `Authorization: Bearer <token>`.
+   `JwtAuthenticationFilter` (a plain `OncePerRequestFilter`, registered
+   before `UsernamePasswordAuthenticationFilter`) parses and verifies it,
+   then populates `SecurityContextHolder` with an `AuthenticatedUser(userId,
+   email)` principal — no `UserDetailsService`/`AuthenticationManager`
+   round-trip, since there's no username/password check happening at
+   request time, just signature + expiry verification.
+3. `SecurityConfig` permits `/actuator/health` and `/api/v1/auth/**`;
+   everything else requires an authenticated principal.
+4. Rejections from the security filter chain (missing/invalid token → 401,
+   authenticated-but-forbidden → 403) never reach `GlobalExceptionHandler`
+   — that only covers exceptions inside the DispatcherServlet. They're
+   handled by `RestAuthenticationEntryPoint` / `RestAccessDeniedHandler`,
+   writing the same `ApiError` JSON shape directly, so the API's error
+   contract stays uniform regardless of which layer rejected the request.
+
+Passwords are hashed with `BCryptPasswordEncoder` (`SecurityConfig` exposes
+it as a `PasswordEncoder` bean); `RegisterUseCase`/`LoginUseCase` are the
+only callers. Login failures (unknown email vs. wrong password) both raise
+the same `InvalidCredentialsException` — deliberately indistinguishable, so
+the API doesn't leak which emails are registered.
+
+Controllers read the current user via
+`@AuthenticationPrincipal AuthenticatedUser principal` (see
+`UserController.me`) — never by re-parsing the token or querying
+`SecurityContextHolder` directly in application code.
 
 ## Media abstraction
 
