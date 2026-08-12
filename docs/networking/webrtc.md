@@ -1,8 +1,8 @@
 # WebRTC
 
-**Status: 1:1 calling implemented (Milestone 4). Mesh (3+ participants) is
-Milestone 6, SFU is Milestone 11 — see below for why the same code already
-supports both.**
+**Status: 1:1 calling (Milestone 4) and group Mesh, 3+ participants
+(Milestone 6) both implemented — by the same code, see below. SFU is
+Milestone 11.**
 
 ## SDP offer/answer, ICE, and why media skips the backend
 
@@ -42,15 +42,22 @@ coordination message: whichever participant has the lexicographically
 smaller `userId` always initiates, deterministically, for every pair. The
 other side just waits to receive an offer and answers it.
 
-## Mesh-ready by construction
+## Mesh-ready by construction (Milestone 6 confirms it)
 
 `PeerConnectionManager` was built as `Map<participantId, RTCPeerConnection>`
-from the start — Milestone 4 only ever populates that map with one entry
-(the other participant in a 1:1 call), but the class itself doesn't know
-or care how many peers it's managing. Milestone 6 doesn't change this
-class at all; it only changes how many participants are in the room the
-existing reconciliation logic (`useWebRtcPeers`, connect-new/disconnect-
-gone based on the room's participant list) is already watching.
+from the start (Milestone 4) — the class never assumed exactly one remote
+peer, so group Mesh (Milestone 6) required **zero changes** to
+`PeerConnectionManager`, `useWebRtcPeers`, or the backend's broadcast
+routing. What Milestone 6 actually added was verification: backend
+integration tests (`MeshSignalingIntegrationTest`) covering a 4th
+participant receiving a full snapshot of 3 existing ones, all existing
+participants being notified when a new one joins, and everyone remaining
+being notified when someone leaves — plus a live 4-client run against the
+real dev server confirming the same `n(n-1)` total join/snapshot
+notifications the math below predicts. The glare-avoidance rule (smaller
+`userId` initiates) also needed no N-specific logic: it's evaluated
+independently per pair, so it already produces exactly one initiator for
+every pair in a room of any size.
 
 ## Mesh vs SFU
 
