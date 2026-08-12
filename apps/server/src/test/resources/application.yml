@@ -12,3 +12,16 @@ spring:
 app:
   cors:
     allowed-origins: http://localhost:3000
+
+# NOTE: this file fully replaces src/main/resources/application.yml on the
+# test classpath (Spring Boot loads the first "application.yml" it finds —
+# main and test resources are not merged), so anything from the main config
+# that a test depends on (e.g. actuator CORS, below) must be duplicated here.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+      cors:
+        allowed-origins: http://localhost:3000
+        allowed-methods: GET
