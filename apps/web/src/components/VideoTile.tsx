@@ -10,6 +10,7 @@ export function VideoTile({
   muted = false,
   label,
   fill = false,
+  fit = "cover",
   children,
 }: {
   stream: MediaStream | null;
@@ -23,6 +24,8 @@ export function VideoTile({
   label?: string;
   /** Fill the parent's box instead of forcing a 16:9 aspect ratio — used by the pinned/spotlight tile. */
   fill?: boolean;
+  /** Keep the whole frame visible with letterboxing, or crop it to fill the tile. */
+  fit?: "cover" | "contain";
   /** Overlay controls (pin, host actions) positioned absolutely by the caller. */
   children?: React.ReactNode;
 }) {
@@ -38,17 +41,17 @@ export function VideoTile({
   const showVideo = active && stream !== null;
 
   return (
-    <div className={`relative overflow-hidden rounded-xl bg-black/90 ${fill ? "h-full w-full" : "aspect-video w-full"}`}>
+    <div className={`group relative overflow-hidden rounded-xl bg-neutral-900 ${fill ? "h-full w-full" : "aspect-video w-full"}`}>
       <video
         ref={videoRef}
         autoPlay
         playsInline
         muted={muted}
-        className={`h-full w-full object-cover ${mirrored ? "-scale-x-100" : ""} ${showVideo ? "" : "hidden"}`}
+        className={`h-full w-full ${fit === "contain" ? "object-contain" : "object-cover"} ${mirrored ? "-scale-x-100" : ""} ${showVideo ? "" : "hidden"}`}
       />
       {!showVideo && (
         <div className="flex h-full w-full items-center justify-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-accent text-2xl font-semibold text-accent-foreground">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-neutral-700 text-2xl font-semibold text-white">
             {initial}
           </div>
         </div>

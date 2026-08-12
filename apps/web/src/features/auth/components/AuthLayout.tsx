@@ -43,7 +43,7 @@ export function AuthLayout({
 
       <Link href="/" className="mb-8 flex items-center gap-2.5">
         <LogoMark />
-        <span className="text-lg font-semibold tracking-tight">Meet Platform</span>
+        <span className="text-lg font-semibold tracking-tight">GGStream</span>
       </Link>
 
       <div className="w-full max-w-sm rounded-2xl border border-card-border bg-card p-8 shadow-xl shadow-black/5">

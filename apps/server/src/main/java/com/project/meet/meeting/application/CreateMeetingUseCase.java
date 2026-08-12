@@ -12,6 +12,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
+import java.time.Instant;
+import java.time.ZoneId;
+import com.project.meet.common.exception.ApiException;
+import org.springframework.http.HttpStatus;
 
 @Component
 public class CreateMeetingUseCase {
@@ -33,10 +37,33 @@ public class CreateMeetingUseCase {
 
 		MeetingAccessType accessType = request.accessType() != null ? request.accessType() : MeetingAccessType.PUBLIC;
 
-		Meeting meeting = new Meeting(generateUniqueCode(), request.title().trim(), host, accessType);
+		validateSchedule(request);
+		Meeting meeting = new Meeting(generateUniqueCode(), request.title().trim(), host, accessType,
+				request.scheduledStartAt(), request.scheduledEndAt(),
+				request.scheduledStartAt() == null ? null : (request.timezone() == null ? "UTC" : request.timezone()));
 		meetingRepository.save(meeting);
 
 		return MeetingResponse.from(meeting);
+	}
+
+	private void validateSchedule(CreateMeetingRequest request) {
+		if (request.scheduledStartAt() == null) {
+			if (request.scheduledEndAt() != null || request.timezone() != null) {
+				throw new ApiException("INVALID_SCHEDULE", HttpStatus.BAD_REQUEST, "Thời gian bắt đầu là bắt buộc");
+			}
+			return;
+		}
+		if (!request.scheduledStartAt().isAfter(Instant.now())) {
+			throw new ApiException("INVALID_SCHEDULE", HttpStatus.BAD_REQUEST, "Thời gian bắt đầu phải ở tương lai");
+		}
+		if (request.scheduledEndAt() == null || !request.scheduledEndAt().isAfter(request.scheduledStartAt())) {
+			throw new ApiException("INVALID_SCHEDULE", HttpStatus.BAD_REQUEST, "Thời gian kết thúc phải sau thời gian bắt đầu");
+		}
+		try {
+			ZoneId.of(request.timezone() == null ? "UTC" : request.timezone());
+		} catch (Exception ex) {
+			throw new ApiException("INVALID_TIMEZONE", HttpStatus.BAD_REQUEST, "Múi giờ không hợp lệ");
+		}
 	}
 
 	private String generateUniqueCode() {

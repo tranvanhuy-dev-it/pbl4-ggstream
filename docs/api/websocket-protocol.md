@@ -82,6 +82,8 @@ HOST_REMOVE_PARTICIPANT              — host → server, which closes the
                                         (not a plain relay) — the target's
                                         own afterConnectionClosed cleanup
                                         then broadcasts PARTICIPANT_LEFT
+MEETING_ENDED                        — host-only broadcast; all participants
+                                        stop local media and leave the room
                                         normally
 PING / PONG                          — heartbeat
 ERROR                                — malformed-message / invalid-chat-message reports

@@ -11,6 +11,7 @@ import { MicOnIcon, MicOffIcon, CameraOnIcon, CameraOffIcon } from "@/components
 import * as meetingApi from "@/features/meeting/api/meetingApi";
 import type { Meeting } from "@/features/meeting/api/meetingApi";
 import { ApiClientError } from "@/lib/api/client";
+import { MeetingTopbar } from "@/features/meeting/components/MeetingTopbar";
 
 type LoadState = "loading" | "ready" | "not_found" | "ended";
 
@@ -42,16 +43,30 @@ export function LobbyView({ code }: { code: string }) {
       .getMeetingByCode(token, code)
       .then((m) => {
         setMeeting(m);
-        setLoadState(m.status === "ENDED" ? "ended" : "ready");
+        setLoadState(m.status === "ENDED" || m.status === "CANCELLED" ? "ended" : "ready");
       })
       .catch(() => setLoadState("not_found"));
   }, [authStatus, token, code]);
+
+  useEffect(() => {
+    if (!token || meeting?.status !== "SCHEDULED") return;
+    const timer = window.setInterval(() => {
+      meetingApi.getMeetingByCode(token, code).then((updated) => {
+        setMeeting(updated);
+        if (updated.status === "ENDED" || updated.status === "CANCELLED") setLoadState("ended");
+      }).catch(() => undefined);
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [token, code, meeting?.status]);
 
   async function handleJoin() {
     if (!meeting || !token) return;
     setJoining(true);
     setJoinError(null);
     try {
+      if (meeting.status === "SCHEDULED" && meeting.hostId === user?.id) {
+        await meetingApi.startMeeting(token, meeting.id);
+      }
       await meetingApi.joinMeeting(token, meeting.id);
       stop();
       router.push(`/meet/${code}/room`);
@@ -60,6 +75,8 @@ export function LobbyView({ code }: { code: string }) {
       setJoining(false);
     }
   }
+
+  const waitingForHost = meeting?.status === "SCHEDULED" && meeting.hostId !== user?.id;
 
   if (authStatus !== "authenticated" || loadState === "loading") {
     return (
@@ -92,14 +109,22 @@ export function LobbyView({ code }: { code: string }) {
     );
   }
 
+  if (!meeting) return null;
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-8 px-6 py-12">
+    <div className="flex h-dvh flex-col overflow-hidden">
+      <MeetingTopbar title={meeting.title} code={meeting.code} />
+      <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-8 overflow-y-auto px-6 py-8">
       <div className="flex w-full max-w-3xl flex-col items-center gap-2 text-center">
         <h1 className="text-xl font-semibold tracking-tight">{meeting?.title}</h1>
         <p className="text-sm text-muted">
-          {meeting?.accessType === "APPROVAL_REQUIRED" && meeting.hostId !== user?.id
-            ? "Chủ phòng cần phê duyệt trước khi bạn có thể vào."
-            : "Sẵn sàng tham gia?"}
+          {waitingForHost
+            ? "Đang chờ chủ phòng bắt đầu cuộc họp."
+            : meeting?.accessType === "APPROVAL_REQUIRED" && meeting.hostId !== user?.id
+              ? "Chủ phòng cần phê duyệt trước khi bạn có thể vào."
+              : meeting?.status === "SCHEDULED"
+                ? "Bạn là chủ phòng. Hãy bắt đầu khi đã sẵn sàng."
+                : "Sẵn sàng tham gia?"}
         </p>
       </div>
 
@@ -142,13 +167,20 @@ export function LobbyView({ code }: { code: string }) {
           {joinError && <p className="text-sm text-danger">{joinError}</p>}
           <button
             onClick={handleJoin}
-            disabled={joining}
+            disabled={joining || waitingForHost}
             className="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:opacity-60"
           >
-            {joining ? "Đang tham gia…" : "Tham gia ngay"}
+            {joining
+              ? "Đang tham gia…"
+              : waitingForHost
+                ? "Đang chờ chủ phòng"
+                : meeting?.status === "SCHEDULED"
+                  ? "Bắt đầu cuộc họp"
+                  : "Tham gia ngay"}
           </button>
         </div>
       </div>
-    </main>
+      </main>
+    </div>
   );
 }

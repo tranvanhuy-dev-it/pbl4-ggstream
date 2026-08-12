@@ -1,113 +1,533 @@
 # WebRTC
 
-**Status: 1:1 calling (Milestone 4) and group Mesh, 3+ participants
-(Milestone 6) both implemented — by the same code, see below. SFU is
-Milestone 11.**
+**Trạng thái: gọi 1:1 (Milestone 4) và group Mesh với 3+ participant**
+**(Milestone 6) đều đã được triển khai — cùng sử dụng một codebase, xem chi tiết bên dưới. SFU thuộc**
+**Milestone 11.**
 
-## SDP offer/answer, ICE, and why media skips the backend
+## SDP offer/answer, ICE và lý do media không đi qua backend
 
-`RTCPeerConnection` negotiates a call in three interleaved steps, all
-happening client-side in `lib/webrtc/PeerConnectionManager`:
+`RTCPeerConnection` thương lượng một cuộc gọi thông qua ba bước đan xen nhau, tất cả đều diễn ra phía client trong `lib/webrtc/PeerConnectionManager`:
 
-1. **SDP offer/answer** — each side describes its media capabilities
-   (codecs, tracks) as an SDP blob. One side calls `createOffer()`, sends it
-   to the other over signaling; the other calls `setRemoteDescription()`
-   then `createAnswer()`, sends that back. Once both sides have called
-   `setLocalDescription`/`setRemoteDescription` with matching
-   offer/answer, the connection has agreed on *what* to send.
-2. **ICE candidate gathering** — in parallel, each browser asks the OS for
-   every network path it might be reachable on (local LAN address, and via
-   STUN, its public-facing address behind NAT — see
-   [ice-stun-turn.md](./ice-stun-turn.md)) and sends each one to the other
-   side as it's discovered (`onicecandidate`). This decides *how* the two
-   browsers actually reach each other.
-3. Once ICE finds a working candidate pair, a **DTLS handshake** negotiates
-   encryption keys for the media itself (**SRTP** — encrypted RTP), then
-   audio/video **RTP** packets flow directly between the two browsers.
+1. **SDP offer/answer** — mỗi phía mô tả khả năng media của mình
+   (codec, track) dưới dạng một SDP blob. Một phía gọi `createOffer()`, gửi
+   offer đó sang phía còn lại thông qua signaling; phía còn lại gọi
+   `setRemoteDescription()` rồi `createAnswer()`, sau đó gửi answer ngược trở lại.
+   Khi cả hai phía đã gọi `setLocalDescription`/`setRemoteDescription` với
+   cặp offer/answer tương ứng, connection đã thống nhất được _sẽ gửi những gì_.
 
-The Spring Boot backend participates in exactly step 1 and the candidate
-exchange in step 2 — as a dumb relay (`WEBRTC_OFFER`/`WEBRTC_ANSWER`/
-`ICE_CANDIDATE`, routed by `targetId`, see
-[signaling.md](./signaling.md)) — and never sees the DTLS handshake or any
-RTP packet. That's not an optimization, it's the whole point of using
-WebRTC instead of routing media through the app server: the backend would
-otherwise have to handle N× the bandwidth of every call in the system.
+2. **Thu thập ICE candidate** — song song với quá trình trên, mỗi browser yêu cầu hệ điều hành
+   cung cấp tất cả các đường mạng mà nó có thể được truy cập thông qua
+   (địa chỉ LAN local và, thông qua STUN, địa chỉ public phía sau NAT — xem
+   [ice-stun-turn.md](./ice-stun-turn.md)), sau đó gửi từng candidate sang phía
+   còn lại ngay khi candidate được phát hiện (`onicecandidate`).
 
-## Offer glare and who initiates
+   Bước này quyết định _hai browser thực sự sẽ kết nối với nhau bằng cách nào_.
 
-If both sides of a pair called `createOffer()` at the same moment (e.g.
-both react to seeing each other join at once), you'd get two competing
-offers — "glare". `useWebRtcPeers` avoids this without any extra
-coordination message: whichever participant has the lexicographically
-smaller `userId` always initiates, deterministically, for every pair. The
-other side just waits to receive an offer and answers it.
+3. Khi ICE tìm được một cặp candidate hoạt động, một **DTLS handshake** sẽ được thực hiện
+   để thương lượng khóa mã hóa cho chính luồng media
+   (**SRTP** — RTP được mã hóa), sau đó các packet audio/video **RTP**
+   sẽ truyền trực tiếp giữa hai browser.
+
+Spring Boot backend chỉ tham gia đúng vào bước 1 và phần trao đổi candidate trong bước 2 —
+với vai trò là một relay đơn giản
+(`WEBRTC_OFFER`/`WEBRTC_ANSWER`/`ICE_CANDIDATE`, được định tuyến theo `targetId`, xem
+[signaling.md](./signaling.md)) — và hoàn toàn không nhìn thấy DTLS handshake hay bất kỳ
+RTP packet nào.
+
+Đây không chỉ là một tối ưu hóa; đây chính là mục đích cốt lõi của việc sử dụng WebRTC
+thay vì định tuyến media xuyên qua application server.
+
+Nếu backend phải xử lý media, nó sẽ phải gánh băng thông tăng theo số lượng cuộc gọi
+trong toàn hệ thống.
+
+## Offer glare và bên nào khởi tạo
+
+Nếu cả hai phía trong một cặp peer cùng gọi `createOffer()` tại cùng một thời điểm
+(ví dụ cả hai cùng phản ứng khi thấy người còn lại vừa join),
+hệ thống sẽ có hai offer cạnh tranh nhau — tình huống này được gọi là **glare**.
+
+`useWebRtcPeers` tránh vấn đề này mà không cần thêm bất kỳ message điều phối nào:
+
+participant có `userId` nhỏ hơn theo thứ tự từ điển sẽ luôn là bên khởi tạo offer,
+một cách xác định trước, cho từng cặp peer.
+
+Phía còn lại chỉ chờ nhận offer và trả lời bằng answer.
+
+Ví dụ:
+
+```text id="g33bmz"
+userId A = "123"
+userId B = "456"
+
+"123" < "456"
+
+→ A gọi createOffer()
+→ B chờ offer và createAnswer()
+```
+
+Quy tắc này được áp dụng độc lập cho từng cặp participant.
 
 ## ICE restart (Milestone 8)
 
-A WebSocket reconnect (see
-[signaling.md](./signaling.md#reconnect-grace-period-milestone-8)) only
-recovers the signaling channel — the WebRTC media path is a separate UDP/TCP
-connection with its own failure mode, and can die (network change, NAT
-rebinding, wifi roam) independently of, or even while, signaling stays up.
-`RTCPeerConnection.connectionState` is the source of truth for that:
+Việc WebSocket reconnect
+(xem [signaling.md](./signaling.md#reconnect-grace-period-milestone-8))
+chỉ khôi phục signaling channel.
 
-- `"disconnected"` is often transient (ICE consistency checks briefly
-  failing, then recovering on their own within seconds) — `PeerConnectionManager`
-  deliberately does not react to it, to avoid restarting a connection that
-  was about to fix itself.
-- `"failed"` means the browser has already given up. At that point
-  `PeerConnectionManager` calls its own `restartIce(participantId)`, which
-  is `createOffer({ iceRestart: true })` followed by the normal
-  `setLocalDescription`/send-over-signaling flow — this re-runs ICE
-  candidate gathering and re-establishes a working pair without tearing
-  down and recreating the `RTCPeerConnection` (which would also lose the
-  negotiated codecs and DTLS/SRTP keys).
-- The same glare-avoidance rule from initial connect applies to restarts:
-  only the side that was originally the offerer (`PeerEntry.isInitiator`,
-  set once in `connect()`) sends the restart offer; the other side just
-  answers whatever offer arrives, exactly like the first connection.
-- A `PARTICIPANT_RECONNECTED` signaling event (sent to everyone except the
-  reconnecting user, see signaling.md) also triggers a `restartIce` call
-  for that peer as a proactive nudge — the WebSocket resuming seamlessly
-  doesn't guarantee the media path did too, so this covers the case where
-  `connectionState` hasn't (yet) flipped to `"failed"` on its own.
+WebRTC media path là một kết nối UDP/TCP riêng biệt với failure mode riêng và có thể bị hỏng vì:
 
-## Mesh-ready by construction (Milestone 6 confirms it)
+- thay đổi mạng
+- NAT rebinding
+- chuyển Wi-Fi
+- thay đổi interface mạng
 
-`PeerConnectionManager` was built as `Map<participantId, RTCPeerConnection>`
-from the start (Milestone 4) — the class never assumed exactly one remote
-peer, so group Mesh (Milestone 6) required **zero changes** to
-`PeerConnectionManager`, `useWebRtcPeers`, or the backend's broadcast
-routing. What Milestone 6 actually added was verification: backend
-integration tests (`MeshSignalingIntegrationTest`) covering a 4th
-participant receiving a full snapshot of 3 existing ones, all existing
-participants being notified when a new one joins, and everyone remaining
-being notified when someone leaves — plus a live 4-client run against the
-real dev server confirming the same `n(n-1)` total join/snapshot
-notifications the math below predicts. The glare-avoidance rule (smaller
-`userId` initiates) also needed no N-specific logic: it's evaluated
-independently per pair, so it already produces exactly one initiator for
-every pair in a room of any size.
+Media path có thể hỏng độc lập với signaling, thậm chí trong khi WebSocket vẫn đang hoạt động bình thường.
 
-## Mesh vs SFU
+`RTCPeerConnection.connectionState` là nguồn trạng thái chính xác cho việc này.
 
-Mesh: every participant opens one `RTCPeerConnection` per other participant.
-For `n` participants that's `n(n-1)/2` peer connections total, and each
-participant uploads their own stream `n-1` times — upload bandwidth and CPU
-(encoding) scale linearly with room size per participant. This is fine for
-small rooms (Milestone 6 targets 3–6 participants) and breaks down quickly
-beyond that.
+### `disconnected`
 
-SFU: each participant sends **one** upload to a central relay, which forwards
-(without re-encoding) to every other participant. Upload cost per participant
-becomes constant; the SFU absorbs the fan-out. Milestone 10 measures Mesh's
-actual bandwidth/CPU/RTT/packet-loss behavior at 2–6 participants before
-Milestone 11 justifies and designs the SFU migration — see the root README's
-milestone plan.
+Trạng thái:
 
-## WebRTC statistics
+```text id="ow2hsq"
+"disconnected"
+```
 
-Once media is flowing (Milestone 9), `RTCPeerConnection.getStats()` is
-polled for RTT, jitter, packet loss, bitrate, frames dropped, candidate
-type/protocol, and codec — surfaced in a developer/debug panel. This is the
-data the project's networking report draws on.
+thường chỉ là tạm thời.
+
+Ví dụ ICE connectivity check có thể thất bại trong một khoảng ngắn rồi tự phục hồi sau vài giây.
+
+Vì vậy `PeerConnectionManager` cố ý **không phản ứng ngay** với trạng thái này,
+để tránh restart một connection đang chuẩn bị tự phục hồi.
+
+### `failed`
+
+Trạng thái:
+
+```text id="1u020w"
+"failed"
+```
+
+có nghĩa browser đã xác định connection không thể phục hồi bằng cơ chế ICE hiện tại.
+
+Khi đó `PeerConnectionManager` gọi:
+
+```text id="gsdsfr"
+restartIce(participantId)
+```
+
+Logic tương đương:
+
+```typescript id="l6mwd1"
+createOffer({ iceRestart: true });
+```
+
+sau đó tiếp tục flow thông thường:
+
+```text id="bn8tez"
+createOffer({ iceRestart: true })
+        ↓
+setLocalDescription()
+        ↓
+send WEBRTC_OFFER through signaling
+        ↓
+remote peer creates answer
+        ↓
+ICE candidate gathering runs again
+```
+
+Cơ chế này chạy lại ICE candidate gathering và tìm một candidate pair hoạt động mới mà
+không cần phá bỏ và tạo lại toàn bộ `RTCPeerConnection`.
+
+Điều này quan trọng vì việc tạo mới connection hoàn toàn có thể làm mất các trạng thái
+đã được negotiation trước đó.
+
+### Tránh glare khi ICE restart
+
+Quy tắc tránh glare từ lần kết nối đầu tiên vẫn được sử dụng khi restart.
+
+Chỉ phía vốn là offerer ban đầu mới gửi restart offer.
+
+Thông tin này được lưu trong:
+
+```text id="j2zeyb"
+PeerEntry.isInitiator
+```
+
+và được set một lần trong:
+
+```text id="polfwl"
+connect()
+```
+
+Phía còn lại chỉ trả lời bất kỳ offer nào nhận được, giống hoàn toàn với lần kết nối đầu tiên.
+
+Flow:
+
+```text id="allqzm"
+Initiator
+   │
+   │ createOffer({ iceRestart: true })
+   ▼
+Signaling
+   │
+   ▼
+Non-initiator
+   │
+   │ createAnswer()
+   ▼
+Signaling
+   │
+   ▼
+Initiator
+```
+
+### `PARTICIPANT_RECONNECTED`
+
+Một signaling event:
+
+```text id="g79m6l"
+PARTICIPANT_RECONNECTED
+```
+
+được gửi tới tất cả participant khác, ngoại trừ chính user vừa reconnect.
+
+Event này cũng kích hoạt:
+
+```text id="r3lv7w"
+restartIce
+```
+
+đối với peer tương ứng như một biện pháp chủ động.
+
+Lý do là việc WebSocket reconnect thành công không đảm bảo media path cũng đã hồi phục.
+
+Có trường hợp:
+
+```text id="4wmx2b"
+WebSocket
+DISCONNECTED
+    ↓
+RECONNECTED
+```
+
+nhưng:
+
+```text id="49iuf7"
+WebRTC media path
+old NAT mapping
+        ↓
+no longer valid
+```
+
+và `connectionState` có thể chưa kịp chuyển sang `"failed"`.
+
+`PARTICIPANT_RECONNECTED` giúp chủ động kích hoạt quá trình ICE restart trong trường hợp đó.
+
+## Sẵn sàng cho Mesh ngay từ kiến trúc ban đầu
+
+`PeerConnectionManager` ngay từ Milestone 4 đã được xây dựng theo dạng:
+
+```typescript id="04xanj"
+Map<participantId, RTCPeerConnection>;
+```
+
+Class này chưa bao giờ giả định chỉ tồn tại đúng một remote peer.
+
+Vì vậy khi triển khai group Mesh ở Milestone 6, hệ thống **không cần thay đổi**
+`PeerConnectionManager`, `useWebRtcPeers` hoặc logic broadcast routing phía backend.
+
+Nói cách khác, code 1:1 ban đầu thực chất đã có cấu trúc hỗ trợ nhiều peer.
+
+Ví dụ một room có:
+
+```text id="hxwfbu"
+A
+B
+C
+D
+```
+
+thì phía A có:
+
+```text id="j5g5ej"
+PeerConnectionManager
+└── peers
+    ├── B → RTCPeerConnection
+    ├── C → RTCPeerConnection
+    └── D → RTCPeerConnection
+```
+
+Phía B:
+
+```text id="kox2xi"
+PeerConnectionManager
+└── peers
+    ├── A → RTCPeerConnection
+    ├── C → RTCPeerConnection
+    └── D → RTCPeerConnection
+```
+
+và tương tự cho các participant còn lại.
+
+### Milestone 6 thực sự bổ sung những gì
+
+Milestone 6 chủ yếu bổ sung việc kiểm chứng.
+
+Backend integration test:
+
+```text id="y8s6j0"
+MeshSignalingIntegrationTest
+```
+
+kiểm tra các trường hợp:
+
+- participant thứ 4 join và nhận đầy đủ snapshot của 3 participant đã có trong room;
+- tất cả participant hiện tại đều được thông báo khi participant mới join;
+- khi một participant leave, toàn bộ participant còn lại đều nhận được notification tương ứng.
+
+Ngoài ra còn có một lần chạy thực tế với 4 client trên dev server thật,
+xác nhận số lượng notification join/snapshot đúng với công thức toán học dự kiến.
+
+Quy tắc tránh glare:
+
+```text id="xkvf2v"
+userId nhỏ hơn → initiator
+```
+
+cũng không cần bất kỳ logic riêng nào theo số lượng participant.
+
+Nó được đánh giá độc lập cho từng cặp.
+
+Ví dụ với:
+
+```text id="9au8cm"
+A < B < C < D
+```
+
+các cặp có initiator:
+
+```text id="xmqvig"
+A-B → A
+A-C → A
+A-D → A
+
+B-C → B
+B-D → B
+
+C-D → C
+```
+
+Mỗi cặp luôn chỉ có đúng một initiator.
+
+## Mesh và SFU
+
+### Mesh
+
+Trong Mesh, mỗi participant mở một `RTCPeerConnection` tới từng participant còn lại.
+
+Với `n` participant, tổng số peer connection là:
+
+```text id="m31ba9"
+n(n - 1)
+────────
+   2
+```
+
+Ví dụ:
+
+```text id="2ptktt"
+2 participant → 1 connection
+3 participant → 3 connections
+4 participant → 6 connections
+5 participant → 10 connections
+6 participant → 15 connections
+```
+
+Mỗi participant cũng phải upload stream của chính mình:
+
+```text id="jvbpob"
+n - 1
+```
+
+lần.
+
+Ví dụ 4 participant:
+
+```text id="mftr2e"
+          B
+         ▲
+         │ stream A
+         │
+C ◀──────A──────▶ D
+   stream A   stream A
+```
+
+A phải upload cùng media stream tới:
+
+```text id="eif86p"
+B
+C
+D
+```
+
+tức 3 lần.
+
+Do đó bandwidth upload và CPU encoding trên mỗi participant tăng gần tuyến tính theo kích thước room.
+
+Mesh phù hợp cho room nhỏ.
+
+Milestone 6 nhắm tới:
+
+```text id="5uinhm"
+3–6 participant
+```
+
+và sẽ nhanh chóng gặp giới hạn khi room lớn hơn.
+
+### SFU
+
+Với SFU, mỗi participant chỉ gửi **một** upload stream tới một relay trung tâm.
+
+```text id="dxcn9m"
+              ┌─────────┐
+              │    A    │
+              └────┬────┘
+                   │
+                   │ 1 upload
+                   ▼
+              ┌─────────┐
+              │   SFU   │
+              └─┬──┬──┬─┘
+                │  │  │
+                ▼  ▼  ▼
+                B  C  D
+```
+
+SFU sau đó forward stream tới những participant còn lại mà không cần re-encode.
+
+Chi phí upload của participant trở thành gần như cố định:
+
+```text id="paoe1z"
+Mesh:
+upload ≈ n - 1 streams
+
+SFU:
+upload ≈ 1 stream
+```
+
+SFU chịu trách nhiệm fan-out.
+
+Do đó:
+
+```text id="vsytr8"
+Participant bandwidth
+        ↓
+ổn định hơn
+
+SFU bandwidth
+        ↓
+tăng theo số participant
+```
+
+Milestone 10 sẽ đo hành vi thực tế của Mesh với:
+
+```text id="uxo68v"
+2
+3
+4
+5
+6
+```
+
+participant thông qua các chỉ số:
+
+- bandwidth
+- CPU
+- RTT
+- packet loss
+
+Sau đó Milestone 11 mới sử dụng dữ liệu đó để giải thích và thiết kế quá trình chuyển sang SFU.
+
+Xem milestone plan trong root `README`.
+
+## Thống kê WebRTC
+
+Sau khi media bắt đầu truyền
+(Milestone 9), hệ thống định kỳ gọi:
+
+```typescript id="6hp65t"
+RTCPeerConnection.getStats();
+```
+
+để thu thập các chỉ số networking.
+
+Bao gồm:
+
+```text id="orjjwq"
+RTT
+jitter
+packet loss
+bitrate
+frames dropped
+candidate type
+protocol
+codec
+```
+
+Các chỉ số này được hiển thị trong developer/debug panel.
+
+Ví dụ:
+
+```text id="4dfl9d"
+Peer: participant-B
+
+Connection:
+  state: connected
+  protocol: udp
+  candidate: srflx
+
+Network:
+  RTT: 42 ms
+  jitter: 7 ms
+  packet loss: 0.8%
+
+Video:
+  bitrate: 1.8 Mbps
+  frames dropped: 3
+  codec: VP8
+```
+
+Đây là nguồn dữ liệu chính được sử dụng cho phần phân tích mạng của báo cáo đồ án.
+
+### Cách triển khai Milestone 9
+
+`PeerConnectionManager.getStats()` gọi `RTCPeerConnection.getStats()` cho
+từng kết nối trong Mesh và trả về một `Map<participantId, RTCStatsReport>`.
+`useWebRtcStats` chỉ poll khi panel chẩn đoán đang mở, với chu kỳ 2 giây,
+để tránh tạo công việc nền không cần thiết.
+
+Các report được ghép như sau:
+
+- `candidate-pair` được chọn cung cấp `currentRoundTripTime` (RTT).
+- `local-candidate` mà candidate pair tham chiếu cung cấp
+  `candidateType` và `protocol`.
+- `inbound-rtp` cung cấp jitter, packets lost/received, bytes received,
+  frames dropped và `codecId`.
+- `codecId` được tra ngược sang report `codec` để lấy `mimeType`.
+
+Bitrate không phải giá trị tức thời có sẵn. Hook tính từ hai lần lấy mẫu:
+
+```text
+bitrate (kbps) = (bytesReceived mới - bytesReceived cũ) × 8
+                 ───────────────────────────────────────────
+                    thời gian giữa hai mẫu (milliseconds)
+```
+
+Tỷ lệ mất gói là giá trị tích lũy của kết nối:
+
+```text
+packet loss (%) = packetsLost / (packetsReceived + packetsLost) × 100
+```
+
+Panel chỉ phản ánh thống kê mà trình duyệt hiện tại quan sát được cho từng
+peer; backend không thu thập hoặc tổng hợp dữ liệu này.

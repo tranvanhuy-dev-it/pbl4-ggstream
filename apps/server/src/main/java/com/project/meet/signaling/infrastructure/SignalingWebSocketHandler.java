@@ -102,6 +102,10 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
 			closeQuietly(session, CloseStatus.NOT_ACCEPTABLE.withReason("Meeting not found"));
 			return;
 		}
+		if (meeting.isEnded() || meeting.isScheduledAndNotStarted()) {
+			closeQuietly(session, CloseStatus.POLICY_VIOLATION.withReason("Meeting is not active"));
+			return;
+		}
 		User dbUser = userRepository.findById(user.userId()).orElse(null);
 		String displayName = dbUser != null ? dbUser.getDisplayName() : user.email();
 		boolean isHost = meeting.isHostedBy(user.userId());
@@ -277,6 +281,7 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
 			case PARTICIPANT_APPROVED, PARTICIPANT_REJECTED -> handleApprovalDecision(session, runtime, meetingId, envelope);
 			case HOST_MUTE_PARTICIPANT -> relayIfSenderIsHost(session, runtime, envelope);
 			case HOST_REMOVE_PARTICIPANT -> handleRemoveParticipant(session, runtime, meetingId, envelope);
+			case MEETING_ENDED -> broadcastIfSenderIsHost(session, runtime, envelope);
 			default -> {
 				if (envelope.targetId() != null) {
 					sendToTarget(runtime, envelope);
@@ -367,6 +372,13 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
 			return;
 		}
 		sendToTarget(runtime, envelope);
+	}
+
+	private void broadcastIfSenderIsHost(WebSocketSession session, MeetingRuntime runtime, SignalingEnvelope envelope) {
+		if (!isHost(runtime, session)) {
+			return;
+		}
+		broadcast(runtime, session.getId(), envelope);
 	}
 
 	private void handleRemoveParticipant(WebSocketSession session, MeetingRuntime runtime, UUID meetingId, SignalingEnvelope envelope) {

@@ -1,45 +1,37 @@
-# Connection Flow
+# Luồng kết nối
 
-Full sequence for a 1:1 call, as implemented (`useWebRtcPeers` +
-`PeerConnectionManager` on the frontend, generic relay in
-`SignalingWebSocketHandler` on the backend — see
-[signaling.md](./signaling.md)):
+Toàn bộ trình tự cho một cuộc gọi 1:1, theo đúng cách hệ thống hiện tại đang được triển khai (`useWebRtcPeers` + `PeerConnectionManager` ở frontend, cơ chế relay tổng quát trong `SignalingWebSocketHandler` ở backend — xem [signaling.md](./signaling.md)):
 
-```
-Browser A (smaller userId)          Java (relay only)          Browser B
+```text
+Browser A (userId nhỏ hơn)          Java (chỉ relay)          Browser B
        │                                   │                          │
-       │  both already connected to /ws/meetings/{id}, know each     │
-       │  other's userId via PARTICIPANT_JOINED (snapshot/broadcast) │
+       │  cả hai đã kết nối tới /ws/meetings/{id}, biết userId của   │
+       │  nhau thông qua PARTICIPANT_JOINED (snapshot/broadcast)     │
        │                                   │                          │
   createOffer()                            │                          │
   setLocalDescription(offer)               │                          │
-       │──── WEBRTC_OFFER, targetId=B ────▶│──── relay by targetId ──▶│
+       │──── WEBRTC_OFFER, targetId=B ────▶│──── relay theo targetId ─▶│
+       │                                   │                          │
        │                                   │                          │  setRemoteDescription(offer)
        │                                   │                          │  createAnswer()
        │                                   │                          │  setLocalDescription(answer)
-       │◀──── relay by targetId ───────────│◀── WEBRTC_ANSWER ────────│
+       │◀──── relay theo targetId ─────────│◀── WEBRTC_ANSWER ────────│
   setRemoteDescription(answer)             │                          │
        │                                   │                          │
-       │  (throughout, both directions, as each browser's ICE agent  │
-       │   discovers candidates)                                     │
+       │  (trong suốt quá trình này, theo cả hai chiều, khi ICE agent│
+       │   của mỗi browser phát hiện các candidate)                  │
        │──── ICE_CANDIDATE, targetId=B ───▶│──── relay ──────────────▶│
        │◀──── relay ────────────────────────│◀─── ICE_CANDIDATE ──────│
        │                                   │                          │
-       │        ICE connectivity checks find a working candidate pair
-       │        DTLS handshake negotiates SRTP keys
+       │        ICE connectivity checks tìm ra một cặp candidate hoạt động
+       │        DTLS handshake thương lượng các khóa SRTP
        │                                   │                          │
        ║═══════════════ SRTP media (audio/video RTP) ═════════════════║
-       ║              directly between browsers, no backend           ║
+       ║          truyền trực tiếp giữa các browser, không qua backend ║
 ```
 
-Java is on the wire for exactly four message types
-(`WEBRTC_OFFER`/`WEBRTC_ANSWER`/`ICE_CANDIDATE`, relayed by `targetId`) and
-never touches anything after that — the DTLS handshake and all RTP/RTCP
-traffic is browser-to-browser only.
+Java chỉ nằm trên đường truyền đối với đúng bốn loại message (`WEBRTC_OFFER`/`WEBRTC_ANSWER`/`ICE_CANDIDATE`, được relay theo `targetId`) và không bao giờ can thiệp vào bất kỳ thứ gì sau đó — quá trình DTLS handshake và toàn bộ lưu lượng RTP/RTCP chỉ diễn ra trực tiếp từ browser này sang browser kia.
 
-## Which side is "A"
+## Bên nào là "A"
 
-There's no dedicated caller/callee role — `useWebRtcPeers` decides per pair,
-deterministically, by comparing `userId`s (lexicographically smaller
-initiates). See [webrtc.md](./webrtc.md#offer-glare-and-who-initiates) for
-why.
+Không có vai trò caller/callee cố định — `useWebRtcPeers` sẽ quyết định cho từng cặp theo cách xác định trước, bằng cách so sánh các `userId` (bên có `userId` nhỏ hơn theo thứ tự từ điển sẽ là bên khởi tạo). Xem [webrtc.md](./webrtc.md#offer-glare-and-who-initiates) để biết lý do.

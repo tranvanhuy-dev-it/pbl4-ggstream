@@ -57,6 +57,17 @@ export class PeerConnectionManager {
     return this.screenStream !== null;
   }
 
+  /** Snapshot the browser's raw WebRTC statistics for every current mesh peer. */
+  async getStats(): Promise<Map<string, RTCStatsReport>> {
+    const snapshots = await Promise.all(
+      Array.from(this.peers, async ([participantId, entry]) => {
+        const report = await entry.pc.getStats();
+        return [participantId, report] as const;
+      }),
+    );
+    return new Map(snapshots);
+  }
+
   /** Initiator side of a new connection — ensures the peer exists (creating it adds local tracks) and sends the initial offer. */
   async connect(participantId: string): Promise<void> {
     const entry = this.getOrCreatePeer(participantId);

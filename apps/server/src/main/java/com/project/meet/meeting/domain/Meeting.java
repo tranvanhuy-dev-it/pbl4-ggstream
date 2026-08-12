@@ -53,16 +53,33 @@ public class Meeting {
 	@Column(name = "ended_at")
 	private Instant endedAt;
 
+	@Column(name = "scheduled_start_at")
+	private Instant scheduledStartAt;
+
+	@Column(name = "scheduled_end_at")
+	private Instant scheduledEndAt;
+
+	@Column(name = "timezone", length = 80)
+	private String timezone;
+
 	protected Meeting() {
 		// JPA
 	}
 
 	public Meeting(String code, String title, User host, MeetingAccessType accessType) {
+		this(code, title, host, accessType, null, null, null);
+	}
+
+	public Meeting(String code, String title, User host, MeetingAccessType accessType,
+				   Instant scheduledStartAt, Instant scheduledEndAt, String timezone) {
 		this.code = code;
 		this.title = title;
 		this.host = host;
 		this.accessType = accessType;
-		this.status = MeetingStatus.CREATED;
+		this.scheduledStartAt = scheduledStartAt;
+		this.scheduledEndAt = scheduledEndAt;
+		this.timezone = timezone;
+		this.status = scheduledStartAt == null ? MeetingStatus.CREATED : MeetingStatus.SCHEDULED;
 	}
 
 	@PrePersist
@@ -71,7 +88,7 @@ public class Meeting {
 	}
 
 	public void markActive() {
-		if (this.status == MeetingStatus.CREATED) {
+		if (this.status == MeetingStatus.CREATED || this.status == MeetingStatus.SCHEDULED) {
 			this.status = MeetingStatus.ACTIVE;
 			this.startedAt = Instant.now();
 		}
@@ -83,7 +100,18 @@ public class Meeting {
 	}
 
 	public boolean isEnded() {
-		return this.status == MeetingStatus.ENDED;
+		return this.status == MeetingStatus.ENDED || this.status == MeetingStatus.CANCELLED;
+	}
+
+	public boolean isScheduledAndNotStarted() {
+		return this.status == MeetingStatus.SCHEDULED;
+	}
+
+	public void cancel() {
+		if (this.status == MeetingStatus.SCHEDULED) {
+			this.status = MeetingStatus.CANCELLED;
+			this.endedAt = Instant.now();
+		}
 	}
 
 	public boolean isHostedBy(UUID userId) {
@@ -125,4 +153,10 @@ public class Meeting {
 	public Instant getEndedAt() {
 		return endedAt;
 	}
+
+	public Instant getScheduledStartAt() { return scheduledStartAt; }
+
+	public Instant getScheduledEndAt() { return scheduledEndAt; }
+
+	public String getTimezone() { return timezone; }
 }

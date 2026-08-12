@@ -17,7 +17,10 @@ public record MeetingResponse(
 		MeetingAccessType accessType,
 		Instant createdAt,
 		Instant startedAt,
-		Instant endedAt
+		Instant endedAt,
+		Instant scheduledStartAt,
+		Instant scheduledEndAt,
+		String timezone
 ) {
 
 	public static MeetingResponse from(Meeting meeting) {
@@ -31,7 +34,10 @@ public record MeetingResponse(
 				meeting.getAccessType(),
 				meeting.getCreatedAt(),
 				meeting.getStartedAt(),
-				meeting.getEndedAt()
+				meeting.getEndedAt(),
+				meeting.getScheduledStartAt(),
+				meeting.getScheduledEndAt(),
+				meeting.getTimezone()
 		);
 	}
 }

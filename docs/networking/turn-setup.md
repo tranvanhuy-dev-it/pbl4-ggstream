@@ -1,172 +1,497 @@
-# Coturn Setup (Local, No Docker)
+# Cài đặt Coturn cục bộ (không dùng Docker)
 
-**Status: backend/frontend TURN credential plumbing is implemented and
-active; the Coturn server itself is not installed in this project's dev
-environment yet** (see [ice-stun-turn.md](./ice-stun-turn.md) for why: STUN
-alone is enough for same-network testing, TURN only matters for symmetric-NAT/
-cross-network calls — install it when you actually need to test or demo
-that path). `GET /api/v1/rtc/ice-servers` already degrades gracefully to
-STUN-only when `TURN_HOST`/`TURN_SECRET` are unset, so nothing breaks either
-way.
+**Trạng thái: cơ chế cấp TURN credential ở backend/frontend đã được triển khai và**
+**đang hoạt động; tuy nhiên Coturn server hiện vẫn chưa được cài đặt trong môi trường**
+**development của project này**.
 
-## Why Coturn, and why not Docker
+Xem thêm [ice-stun-turn.md](./ice-stun-turn.md) để biết lý do: STUN đã đủ cho việc
+test trong cùng mạng, còn TURN chỉ thực sự cần khi test các trường hợp symmetric NAT
+hoặc gọi giữa các mạng khác nhau.
 
-Coturn is the de facto standard open-source TURN/STUN server implementation
-— what most production WebRTC deployments use. It's a native Linux
-service; there's no official Windows build. Two honest options if your dev
-machine is Windows:
+Endpoint:
 
-1. **Run it in WSL2** (Windows Subsystem for Linux) — not a container, a
-   real lightweight Linux VM integrated into Windows. This is not "Docker"
-   in the sense this project avoids (no image layers, no container
-   orchestration, no `docker-compose.yml`) — it's the same kind of thing as
-   installing PostgreSQL directly, just on a Linux subsystem instead of
-   native Windows.
-2. **Deploy it on an actual Linux host/VPS** if you have one — the
-   production-realistic option, and what section 2 below assumes.
+```text
+GET /api/v1/rtc/ice-servers
+```
 
-## 1. Install
+đã được thiết kế để tự động fallback về chế độ chỉ dùng STUN nếu:
 
-Debian/Ubuntu (native Linux, or WSL2):
+```text
+TURN_HOST
+TURN_SECRET
+```
+
+chưa được cấu hình.
+
+Vì vậy project vẫn hoạt động bình thường dù Coturn chưa được cài đặt.
+
+## Tại sao dùng Coturn, và tại sao không dùng Docker
+
+Coturn là implementation TURN/STUN server mã nguồn mở được sử dụng rất phổ biến
+trong các hệ thống WebRTC production.
+
+Đây là một service Linux native và không có bản build Windows chính thức.
+
+Nếu máy development đang sử dụng Windows, có hai lựa chọn thực tế:
+
+1. **Chạy Coturn trong WSL2** (Windows Subsystem for Linux).
+
+   WSL2 không phải container mà là một môi trường Linux nhẹ được tích hợp vào Windows.
+
+   Việc sử dụng WSL2 không được xem là "dùng Docker" theo quy ước của project này:
+   - không có Docker image
+   - không có image layer
+   - không có container orchestration
+   - không có `docker-compose.yml`
+
+   Về mặt development, nó tương tự như việc cài PostgreSQL trực tiếp,
+   chỉ khác là Coturn chạy trong Linux subsystem thay vì chạy native trên Windows.
+
+2. **Deploy Coturn lên một Linux host/VPS thực tế** nếu có.
+
+   Đây là phương án gần với production nhất và cũng là phương án mà phần cấu hình
+   bên dưới giả định.
+
+## 1. Cài đặt
+
+Trên Debian/Ubuntu, bao gồm cả Ubuntu trong WSL2:
 
 ```bash
 sudo apt update
 sudo apt install coturn
 ```
 
-Fedora/RHEL:
+Trên Fedora/RHEL:
 
 ```bash
 sudo dnf install coturn
 ```
 
-Confirm it installed:
+Kiểm tra Coturn đã được cài đặt:
 
 ```bash
 turnserver --version
 ```
 
-## 2. Configure
+## 2. Cấu hình
 
-Edit `/etc/turnserver.conf`. The minimal config matching this project's
-backend (`TurnCredentialService`, `app.turn.*` properties):
+Chỉnh sửa file:
+
+```text
+/etc/turnserver.conf
+```
+
+Cấu hình tối thiểu tương thích với backend hiện tại
+(`TurnCredentialService`, các property `app.turn.*`):
 
 ```ini
-# Standard TURN/STUN port
+# Port TURN/STUN tiêu chuẩn
 listening-port=3478
 
-# Public IP of this machine (or the host reachable from browsers).
-# On a home network behind your own router, this needs port forwarding —
-# see step 4.
+# Public IP của máy này hoặc địa chỉ mà browser có thể truy cập được.
+# Nếu server nằm trong mạng gia đình phía sau router thì cần cấu hình
+# port forwarding — xem bước 4.
 external-ip=YOUR_PUBLIC_OR_REACHABLE_IP
 
-# Time-limited credential auth (matches TurnCredentialService's
-# HMAC-SHA1(secret, "expiryTimestamp:userId") scheme exactly — this is
-# Coturn's built-in "REST API" auth mode, not a custom protocol)
+# Sử dụng cơ chế xác thực credential có thời hạn.
+#
+# Cơ chế này khớp chính xác với TurnCredentialService:
+#
+# HMAC-SHA1(secret, "expiryTimestamp:userId")
+#
+# Đây là "REST API authentication mode" được Coturn hỗ trợ sẵn,
+# không phải custom protocol do project tự định nghĩa.
 use-auth-secret
 static-auth-secret=REPLACE_WITH_THE_SAME_VALUE_AS_TURN_SECRET_IN_.ENV
 
-# A realm is required in this auth mode; the exact value doesn't matter
-# as long as it's consistent
+# Realm là bắt buộc trong chế độ authentication này.
+# Giá trị cụ thể không quá quan trọng, miễn là được cấu hình nhất quán.
 realm=meet-platform.local
 
-# Relay port range — the ports Coturn actually uses to forward media once
-# a session is relayed. Keep this range small and consistent so firewall
-# rules (step 4) stay simple.
+# Dải relay port.
+#
+# Đây là các port Coturn thực sự sử dụng để forward media khi một
+# connection phải sử dụng TURN relay.
+#
+# Giữ range tương đối nhỏ để việc cấu hình firewall ở bước 4 đơn giản hơn.
 min-port=49152
 max-port=49452
 
-# Log to a normal file instead of syslog, easier to tail while testing
+# Ghi log vào file thông thường thay vì syslog để dễ theo dõi khi test.
 log-file=/var/log/turnserver.log
 verbose
 
-# Don't relay to/from this machine's own private/loopback ranges —
-# standard hardening, prevents Coturn being abused as an open relay into
-# your own LAN
+# Không relay traffic tới/từ các địa chỉ loopback/private của chính server.
+#
+# Đây là một biện pháp hardening tiêu chuẩn nhằm tránh Coturn bị lợi dụng
+# như một open relay để truy cập vào mạng nội bộ của server.
 no-loopback-peers
 no-multicast-peers
 ```
 
-Generate a secret and use the **same value** for `static-auth-secret` here
-and `TURN_SECRET` in `apps/server/.env`:
+Tạo một secret ngẫu nhiên:
 
 ```bash
 openssl rand -base64 32
 ```
 
-## 3. Run
+Sử dụng **cùng một giá trị** cho:
+
+```text
+static-auth-secret
+```
+
+trong `/etc/turnserver.conf` và:
+
+```text
+TURN_SECRET
+```
+
+trong:
+
+```text
+apps/server/.env
+```
+
+Ví dụ:
+
+```text
+Coturn:
+static-auth-secret=abc123...
+
+Spring Boot:
+TURN_SECRET=abc123...
+```
+
+Hai giá trị này phải giống nhau.
+
+## 3. Chạy Coturn
+
+Chạy trực tiếp:
 
 ```bash
 sudo turnserver -c /etc/turnserver.conf
 ```
 
-Or as a persistent service (systemd, most distros ship a unit file):
+Hoặc chạy dưới dạng service thường trực bằng systemd
+(trên hầu hết Linux distribution có sẵn unit file):
 
 ```bash
 sudo systemctl enable --now coturn
 ```
 
-## 4. Open the ports
-
-Coturn needs, at minimum:
-
-- **UDP + TCP 3478** — the STUN/TURN control port (candidate gathering,
-  TURN allocation requests)
-- **UDP 49152–49452** (or whatever `min-port`/`max-port` you set) — the
-  actual relayed media
-
-If Coturn runs on a machine behind a router (home network), you need port
-forwarding for all of the above, in addition to any OS-level firewall
-(`ufw`/`firewalld`) rules:
+Kiểm tra trạng thái:
 
 ```bash
-# ufw example
+sudo systemctl status coturn
+```
+
+Theo dõi log:
+
+```bash
+tail -f /var/log/turnserver.log
+```
+
+## 4. Mở các port cần thiết
+
+Coturn tối thiểu cần:
+
+- **UDP + TCP 3478** — STUN/TURN control port, được sử dụng trong quá trình
+  candidate gathering và TURN allocation.
+- **UDP 49152–49452** — hoặc range tương ứng với `min-port` / `max-port`
+  đã cấu hình — dùng để relay media thực tế.
+
+Ví dụ với `ufw`:
+
+```bash
 sudo ufw allow 3478/tcp
 sudo ufw allow 3478/udp
 sudo ufw allow 49152:49452/udp
 ```
 
-## 5. Point the backend at it
+Nếu Coturn chạy trên một máy nằm phía sau router gia đình:
+
+```text
+Internet
+   │
+   ▼
+Router
+   │
+   ▼
+Coturn Server
+```
+
+thì ngoài firewall ở hệ điều hành, bạn còn phải cấu hình **port forwarding**
+trên router cho:
+
+```text
+3478 TCP
+3478 UDP
+49152-49452 UDP
+```
+
+đến máy đang chạy Coturn.
+
+## 5. Cấu hình backend kết nối tới Coturn
+
+Trong:
+
+```text
+apps/server/.env
+```
+
+thêm:
 
 ```env
-# apps/server/.env
 TURN_HOST=your-coturn-host-or-ip
 TURN_PORT=3478
 TURN_SECRET=the-same-secret-from-static-auth-secret-above
 TURN_CREDENTIAL_TTL_SECONDS=3600
 ```
 
-Restart the backend. `GET /api/v1/rtc/ice-servers` (authenticated) should
-now return both a STUN entry and a TURN entry with a freshly-generated
-username/credential pair.
+Ví dụ:
 
-## 6. Test the relay candidate actually works
+```env
+TURN_HOST=203.0.113.10
+TURN_PORT=3478
+TURN_SECRET=your-secret
+TURN_CREDENTIAL_TTL_SECONDS=3600
+```
 
-The most reliable test is forcing a call to use **only** the relay
-candidate, since ICE always prefers a direct (host/srflx) path when one is
-available — so a normal call succeeding doesn't prove TURN works at all.
+Sau đó restart backend.
 
-**Quick check with `turnutils_uclient`** (ships with Coturn):
+Endpoint authenticated:
+
+```text
+GET /api/v1/rtc/ice-servers
+```
+
+bây giờ phải trả về cả STUN và TURN server.
+
+Ví dụ:
+
+```json
+{
+  "iceServers": [
+    {
+      "urls": ["stun:stun.l.google.com:19302"]
+    },
+    {
+      "urls": ["turn:203.0.113.10:3478"],
+      "username": "1786543200:user-id",
+      "credential": "generated-hmac-credential"
+    }
+  ]
+}
+```
+
+`username` và `credential` sẽ được backend tạo mới với thời hạn nhất định.
+
+## 6. Kiểm tra relay candidate có thực sự hoạt động
+
+Cách đáng tin cậy nhất để kiểm tra TURN là buộc cuộc gọi chỉ sử dụng
+**relay candidate**.
+
+Lý do là ICE luôn ưu tiên đường truyền trực tiếp nếu có thể:
+
+```text
+host
+  ↓
+server-reflexive (STUN)
+  ↓
+relay (TURN)
+```
+
+Do đó một cuộc gọi bình thường thành công **không chứng minh TURN đang hoạt động**.
+
+Nó có thể chỉ đang sử dụng:
+
+```text
+host
+```
+
+hoặc:
+
+```text
+srflx
+```
+
+candidate.
+
+### Kiểm tra nhanh bằng `turnutils_uclient`
+
+`turnutils_uclient` được cài cùng Coturn.
+
+Có thể chạy:
 
 ```bash
 turnutils_uclient -u dummy -w dummy -y your-coturn-host
 ```
 
-(A basic connectivity check — a fuller allocation test needs the actual
-HMAC credential, which is more easily verified from the browser.)
+Đây chỉ là kiểm tra connectivity cơ bản.
 
-**From the browser** (most representative test): open
-[Trickle ICE](https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/),
-paste in one STUN server and one TURN server using a credential fetched
-from `GET /api/v1/rtc/ice-servers` (call it once via `curl` with a real JWT,
-copy `username`/`credential` from the response), and confirm a `relay`
-candidate appears in the gathered candidates list — not just `host` and
-`srflx`.
+Một TURN allocation đầy đủ cần credential HMAC thực tế, vì vậy test trực tiếp
+từ browser thường đại diện cho hệ thống thật tốt hơn.
 
-## Credential lifetime
+### Kiểm tra từ browser
 
-Credentials from `TurnCredentialService` expire after
-`TURN_CREDENTIAL_TTL_SECONDS` (default 1 hour) — Coturn independently
-recomputes the HMAC against its own `static-auth-secret` and checks the
-embedded expiry timestamp, so there's no server-side credential store to
-manage or revoke on either side.
+Sử dụng:
+
+[Trickle ICE](https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/)
+
+Thêm một STUN server và một TURN server.
+
+TURN credential lấy bằng cách gọi:
+
+```text
+GET /api/v1/rtc/ice-servers
+```
+
+với JWT hợp lệ.
+
+Ví dụ có thể gọi API bằng `curl`, sau đó copy:
+
+```text
+username
+credential
+```
+
+từ response.
+
+Sau khi bắt đầu gather ICE candidate, kiểm tra danh sách candidate.
+
+Nếu chỉ thấy:
+
+```text
+host
+srflx
+```
+
+thì TURN relay chưa được sử dụng hoặc chưa hoạt động.
+
+Nếu thấy:
+
+```text
+relay
+```
+
+thì browser đã tạo thành công TURN relay candidate.
+
+Đó là bằng chứng tốt nhất rằng:
+
+```text
+Browser
+   │
+   ▼
+Coturn
+   │
+   ▼
+relay candidate
+```
+
+đang hoạt động đúng.
+
+## Thời hạn credential
+
+Credential do `TurnCredentialService` tạo sẽ hết hạn sau:
+
+```text
+TURN_CREDENTIAL_TTL_SECONDS
+```
+
+Giá trị mặc định:
+
+```text
+3600 giây
+```
+
+tức:
+
+```text
+1 giờ
+```
+
+Backend tạo username theo dạng:
+
+```text
+<expiryUnixTimestamp>:<userId>
+```
+
+Ví dụ:
+
+```text
+1786543200:550e8400-e29b-41d4-a716-446655440000
+```
+
+Credential được tính:
+
+```text
+Base64(
+    HMAC-SHA1(
+        TURN_SECRET,
+        "<expiryUnixTimestamp>:<userId>"
+    )
+)
+```
+
+Coturn nhận:
+
+```text
+username
+credential
+```
+
+từ browser và tự tính lại HMAC bằng:
+
+```text
+static-auth-secret
+```
+
+của chính nó.
+
+Nếu kết quả trùng khớp và timestamp vẫn chưa hết hạn:
+
+```text
+credential valid
+```
+
+Nếu timestamp đã hết hạn:
+
+```text
+credential invalid
+```
+
+Do đó không cần có database dùng chung giữa Spring Boot và Coturn.
+
+Kiến trúc authentication:
+
+```text
+                   cùng shared secret
+                 ┌────────────────────┐
+                 │                    │
+                 ▼                    ▼
+          Spring Boot              Coturn
+              │                       │
+     tạo credential             verify credential
+              │                       ▲
+              ▼                       │
+            Browser ──────────────────┘
+```
+
+Không có TURN credential store cần quản lý hoặc revoke ở cả hai phía.
+
+Chỉ cần đảm bảo:
+
+```text
+apps/server/.env
+TURN_SECRET
+```
+
+và:
+
+```text
+/etc/turnserver.conf
+static-auth-secret
+```
+
+luôn sử dụng cùng một secret.

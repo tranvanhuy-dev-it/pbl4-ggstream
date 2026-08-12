@@ -1,5 +1,7 @@
 "use client";
 
+import { MicOffIcon, MicOnIcon, RemoveParticipantIcon } from "@/components/icons";
+
 export interface WaitingRequest {
   userId: string;
   displayName: string;
@@ -10,6 +12,7 @@ export interface RosterEntry {
   displayName: string;
   isSelf: boolean;
   isHost: boolean;
+  micEnabled: boolean;
 }
 
 export function ParticipantsPanel({
@@ -80,17 +83,20 @@ export function ParticipantsPanel({
                 <div className="flex gap-1">
                   <button
                     onClick={() => onMute(p.userId)}
-                    title="Tắt micro người này"
-                    className="rounded bg-black/60 px-2 py-1 text-xs text-white hover:bg-black/80"
+                    disabled={!p.micEnabled}
+                    aria-label={p.micEnabled ? `Tắt micro của ${p.displayName}` : `${p.displayName} đã tắt micro`}
+                    title={p.micEnabled ? "Tắt micro người này" : "Người này đã tắt micro"}
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 disabled:cursor-default disabled:text-white/65 [&>svg]:h-4 [&>svg]:w-4"
                   >
-                    Tắt tiếng
+                    {p.micEnabled ? MicOnIcon : MicOffIcon}
                   </button>
                   <button
                     onClick={() => onRemove(p.userId)}
-                    title="Đưa người này ra khỏi cuộc họp"
-                    className="rounded bg-danger/80 px-2 py-1 text-xs text-white hover:bg-danger"
+                    aria-label={`Mời ${p.displayName} ra khỏi cuộc họp`}
+                    title="Mời người này ra khỏi cuộc họp"
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white hover:bg-danger/90 [&>svg]:h-4 [&>svg]:w-4"
                   >
-                    Xóa
+                    {RemoveParticipantIcon}
                   </button>
                 </div>
               )}

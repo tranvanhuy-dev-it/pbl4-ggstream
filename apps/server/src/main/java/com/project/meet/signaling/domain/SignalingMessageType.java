@@ -28,6 +28,7 @@ public enum SignalingMessageType {
 
 	HOST_MUTE_PARTICIPANT,
 	HOST_REMOVE_PARTICIPANT,
+	MEETING_ENDED,
 
 	PING,
 	PONG,

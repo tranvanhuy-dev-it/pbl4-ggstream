@@ -234,6 +234,23 @@ and keeps one `pinnedKey` for which tile — if any — is spotlighted:
 
 ## Why `page.tsx` stays thin
 
+## Network diagnostics (Milestone 9)
+
+- `PeerConnectionManager.getStats()` phơi bày snapshot
+  `RTCStatsReport` theo participant nhưng không giữ state giao diện hay
+  tính toán delta.
+- `features/meeting/hooks/useWebRtcStats.ts` poll manager mỗi 2 giây khi
+  panel đang mở, chuẩn hóa RTT, jitter, packet loss, bitrate nhận, ICE
+  candidate, protocol, codec và frames dropped. Hook giữ mẫu
+  `bytesReceived/timestamp` trước đó trong ref để tính bitrate.
+- `NetworkDiagnosticsPanel.tsx` hiển thị số liệu theo từng participant
+  bằng nhãn tiếng Việt và đánh giá nhanh Tốt/Trung bình/Kém. Panel dùng
+  chung slot `activePanel` với chat và danh sách thành viên, nên không làm
+  hẹp sân khấu video bởi nhiều sidebar cùng lúc.
+- Dữ liệu chỉ tồn tại trong trình duyệt và không gửi về backend. Đây là chủ
+  ý của Milestone 9: đo đường media WebRTC thật tại endpoint thay vì thêm
+  một lớp tổng hợp server chưa cần thiết.
+
 WebRTC and signaling state machines are non-trivial and need to survive
 route-level re-renders and be independently testable. They live in
 `lib/webrtc` / `lib/websocket` behind small hook APIs

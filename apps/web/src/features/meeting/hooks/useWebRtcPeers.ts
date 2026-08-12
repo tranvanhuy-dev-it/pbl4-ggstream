@@ -156,5 +156,13 @@ export function useWebRtcPeers(
     setIsScreenSharing(false);
   }, []);
 
-  return { remoteStreams, remoteScreenStreams, handleEnvelope, startScreenShare, stopScreenShare, isScreenSharing };
+  return {
+    remoteStreams,
+    remoteScreenStreams,
+    handleEnvelope,
+    startScreenShare,
+    stopScreenShare,
+    isScreenSharing,
+    manager: managerReady ? managerRef.current : null,
+  };
 }

@@ -1,6 +1,6 @@
 import { apiFetch } from "@/lib/api/client";
 
-export type MeetingStatus = "CREATED" | "WAITING" | "ACTIVE" | "ENDED";
+export type MeetingStatus = "CREATED" | "SCHEDULED" | "WAITING" | "ACTIVE" | "ENDED" | "CANCELLED";
 export type MeetingAccessType = "PUBLIC" | "INVITED" | "APPROVAL_REQUIRED";
 export type ParticipantRole = "HOST" | "CO_HOST" | "PARTICIPANT";
 
@@ -15,6 +15,9 @@ export interface Meeting {
   createdAt: string;
   startedAt: string | null;
   endedAt: string | null;
+  scheduledStartAt: string | null;
+  scheduledEndAt: string | null;
+  timezone: string | null;
 }
 
 export interface Participant {
@@ -30,11 +33,33 @@ function authHeaders(token: string): HeadersInit {
   return { Authorization: `Bearer ${token}` };
 }
 
-export function createMeeting(token: string, title: string, accessType?: MeetingAccessType): Promise<Meeting> {
+export function createMeeting(
+  token: string,
+  title: string,
+  accessType?: MeetingAccessType,
+  schedule?: { scheduledStartAt: string; scheduledEndAt: string; timezone: string },
+): Promise<Meeting> {
   return apiFetch<Meeting>("/api/v1/meetings", {
     method: "POST",
     headers: authHeaders(token),
-    body: JSON.stringify({ title, accessType }),
+    body: JSON.stringify({ title, accessType, ...schedule }),
+  });
+}
+
+export function listMyMeetings(token: string, from: string, to: string): Promise<Meeting[]> {
+  const query = new URLSearchParams({ from, to });
+  return apiFetch<Meeting[]>(`/api/v1/meetings/mine?${query}`, { headers: authHeaders(token) });
+}
+
+export function startMeeting(token: string, meetingId: string): Promise<Meeting> {
+  return apiFetch<Meeting>(`/api/v1/meetings/${meetingId}/start`, {
+    method: "POST", headers: authHeaders(token),
+  });
+}
+
+export function cancelMeeting(token: string, meetingId: string): Promise<Meeting> {
+  return apiFetch<Meeting>(`/api/v1/meetings/${meetingId}/cancel`, {
+    method: "POST", headers: authHeaders(token),
   });
 }
 

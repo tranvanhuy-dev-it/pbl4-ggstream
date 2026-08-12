@@ -1,208 +1,536 @@
 # Signaling
 
-WebSocket endpoint: `ws://localhost:8080/ws/meetings/{meetingId}?token=<JWT>`
-(`SignalingWebSocketHandler` / `WebSocketConfig`, package `signaling`).
+WebSocket endpoint:
 
-## Authentication on connect
-
-Browsers cannot attach an `Authorization` header to a native WebSocket
-upgrade request, so the JWT travels as a `?token=` query parameter instead —
-the one deliberate exception to "JWT always via header" elsewhere in this
-API. `SignalingHandshakeInterceptor` runs *before* the handshake completes:
-
-1. Extracts `{meetingId}` from the request's path variables (Spring's
-   `SimpleUrlHandlerMapping` populates
-   `HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE` on the underlying
-   `HttpServletRequest` for pattern-matched WebSocket handler registrations,
-   same mechanism as an `@PathVariable` in an MVC controller).
-2. Parses and verifies the `token` query param via the same `JwtService`
-   used for REST auth.
-3. Looks up the meeting and rejects (404) if it doesn't exist or has
-   already ended.
-4. On success, stashes the resolved `AuthenticatedUser` and `meetingId` in
-   the WebSocket session's attributes for the handler to read later.
-
-A rejected handshake never reaches `SecurityConfig`'s JWT filter chain at
-all — `/ws/**` is explicitly `permitAll()` there, since this interceptor
-*is* the auth check for that path.
-
-## Envelope routing
-
-Every parsed `SignalingEnvelope` (see
-[api/websocket-protocol.md](../api/websocket-protocol.md)) is handled by
-type:
-
-- **`PING`** → updates the sender's heartbeat timestamp, replies `PONG`
-  directly to that connection only.
-- **`MEETING_JOIN` / `MEETING_LEAVE`** → accepted but inert. Presence is
-  driven by the WebSocket connection lifecycle itself
-  (`afterConnectionEstablished` / `afterConnectionClosed`), not by a
-  client-sent message — a dropped connection is still a "leave" whether or
-  not the client managed to send one first.
-- **`CHAT_MESSAGE`**, **`PARTICIPANT_APPROVED`/`PARTICIPANT_REJECTED`**,
-  **`HOST_MUTE_PARTICIPANT`**, **`HOST_REMOVE_PARTICIPANT`** → custom
-  handling, see the dedicated sections below.
-- **Everything else** (`WEBRTC_OFFER`/`WEBRTC_ANSWER`/`ICE_CANDIDATE`,
-  `SCREEN_SHARE_STARTED`/`STOPPED`) → generic relay. If the envelope has a
-  `targetId`, it's delivered only to that participant's session
-  (point-to-point). Without a `targetId`, it's broadcast to every other
-  session in the room.
-- `senderId`/`meetingId` on every envelope are always stamped server-side
-  from the authenticated session, never trusted from the client — a
-  connection can't claim to speak as a different user.
-
-On connect, a newly-joined participant is sent one `PARTICIPANT_JOINED`
-envelope per participant already in the room (a snapshot, sent only to
-them) before their own `PARTICIPANT_JOINED` is broadcast to everyone else —
-that's how a client builds its initial roster without a separate
-"room state" message type.
-
-## Concurrency model
-
+```text
+ws://localhost:8080/ws/meetings/{meetingId}?token=<JWT>
 ```
+
+được triển khai bởi `SignalingWebSocketHandler` / `WebSocketConfig`, thuộc package `signaling`.
+
+## Xác thực khi kết nối
+
+Browser không thể gắn `Authorization` header vào native WebSocket upgrade request, vì vậy JWT được truyền thông qua query parameter `?token=` thay thế.
+
+Đây là ngoại lệ có chủ đích duy nhất so với quy tắc "JWT luôn được gửi qua header" ở các API còn lại.
+
+`SignalingHandshakeInterceptor` chạy _trước khi_ WebSocket handshake hoàn tất:
+
+1. Lấy `{meetingId}` từ path variable của request.
+
+   `SimpleUrlHandlerMapping` của Spring sẽ đưa các path variable vào:
+
+   ```text
+   HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE
+   ```
+
+   trên `HttpServletRequest` gốc đối với các WebSocket handler được đăng ký bằng URL pattern.
+
+   Đây cũng chính là cơ chế tương tự `@PathVariable` trong MVC controller.
+
+2. Parse và verify query parameter `token` bằng cùng `JwtService` đang được sử dụng cho REST authentication.
+
+3. Tìm meeting tương ứng và từ chối kết nối với HTTP `404` nếu meeting không tồn tại hoặc meeting đã kết thúc.
+
+4. Nếu xác thực thành công, `AuthenticatedUser` đã được resolve và `meetingId` sẽ được lưu vào attributes của WebSocket session để `SignalingWebSocketHandler` sử dụng sau đó.
+
+Một handshake bị từ chối sẽ không bao giờ đi vào JWT filter chain của `SecurityConfig`.
+
+Đường dẫn:
+
+```text
+/ws/**
+```
+
+được cấu hình:
+
+```text
+permitAll()
+```
+
+trong `SecurityConfig`, bởi vì `SignalingHandshakeInterceptor` chính là cơ chế authentication dành riêng cho WebSocket path này.
+
+## Định tuyến envelope
+
+Mọi `SignalingEnvelope` sau khi được parse, xem thêm:
+
+[api/websocket-protocol.md](../api/websocket-protocol.md)
+
+sẽ được xử lý dựa trên `type`.
+
+### `PING`
+
+Cập nhật heartbeat timestamp của sender và trả `PONG` trực tiếp về đúng connection đó.
+
+Không broadcast `PONG` cho participant khác.
+
+### `MEETING_JOIN` / `MEETING_LEAVE`
+
+Được chấp nhận nhưng không thực hiện logic trực tiếp.
+
+Presence của participant được quản lý dựa trên lifecycle của WebSocket connection:
+
+```text
+afterConnectionEstablished
+afterConnectionClosed
+```
+
+thay vì dựa vào message do client gửi.
+
+Lý do là nếu connection bị mất đột ngột thì participant vẫn phải được xem là đã rời phòng, ngay cả khi client không kịp gửi `MEETING_LEAVE`.
+
+### Các message có xử lý riêng
+
+Các loại message sau có custom handling:
+
+```text
+CHAT_MESSAGE
+PARTICIPANT_APPROVED
+PARTICIPANT_REJECTED
+HOST_MUTE_PARTICIPANT
+HOST_REMOVE_PARTICIPANT
+```
+
+Xem các section tương ứng để biết chi tiết.
+
+### Các message còn lại
+
+Các message khác như:
+
+```text
+WEBRTC_OFFER
+WEBRTC_ANSWER
+ICE_CANDIDATE
+
+SCREEN_SHARE_STARTED
+SCREEN_SHARE_STOPPED
+```
+
+được xử lý bởi generic relay.
+
+Nếu envelope có:
+
+```text
+targetId
+```
+
+message chỉ được gửi tới WebSocket session của participant tương ứng.
+
+Đây là kiểu truyền point-to-point:
+
+```text
+Participant A
+      │
+      │ targetId = B
+      ▼
+Java Signaling Server
+      │
+      ▼
+Participant B
+```
+
+Nếu envelope không có `targetId`, message sẽ được broadcast tới tất cả WebSocket session khác trong cùng room.
+
+Ví dụ:
+
+```text
+Participant A
+      │
+      ▼
+Java Signaling Server
+   ┌──┼──┐
+   ▼  ▼  ▼
+   B  C  D
+```
+
+Các field:
+
+```text
+senderId
+meetingId
+```
+
+trên mọi envelope luôn được backend ghi lại từ authenticated WebSocket session.
+
+Backend không bao giờ tin `senderId` hoặc `meetingId` do client tự gửi lên.
+
+Điều này ngăn một connection giả mạo rằng nó đang gửi message dưới danh nghĩa user khác.
+
+## Participant snapshot khi kết nối
+
+Khi một participant mới kết nối vào room, backend gửi cho participant đó một `PARTICIPANT_JOINED` envelope cho từng participant đã có mặt trong room.
+
+Các message này chỉ được gửi cho participant mới và đóng vai trò như một snapshot.
+
+Ví dụ room hiện có:
+
+```text
+A
+B
+C
+```
+
+khi `D` kết nối:
+
+```text
+Server → D: PARTICIPANT_JOINED(A)
+Server → D: PARTICIPANT_JOINED(B)
+Server → D: PARTICIPANT_JOINED(C)
+```
+
+Sau đó backend broadcast participant mới tới những người còn lại:
+
+```text
+Server → A: PARTICIPANT_JOINED(D)
+Server → B: PARTICIPANT_JOINED(D)
+Server → C: PARTICIPANT_JOINED(D)
+```
+
+Nhờ vậy client có thể xây dựng participant roster ban đầu mà không cần thêm một message type riêng kiểu:
+
+```text
+ROOM_STATE
+```
+
+## Mô hình concurrency
+
+```text
 WebSocket connections
         │
         ▼
-SignalingWebSocketHandler   (parses envelopes, never touches room state directly)
+SignalingWebSocketHandler
         │
+        │ parse envelope
+        │ không trực tiếp thay đổi room state
         ▼
 RoomCommandDispatcher
         │
     ┌───┼────┐
     ▼   ▼    ▼
-Room A Room B Room C   ← fully concurrent across rooms
+ Room A Room B Room C
 ```
 
-Within one room, commands (join, leave, PING, relay) run in the exact order
-they were dispatched — otherwise two participants acting at the same
-instant (e.g. one joining while another triggers the room's last-participant
-eviction) could observe or produce an inconsistent `MeetingRuntime`.
+Các room khác nhau có thể được xử lý hoàn toàn concurrent.
 
-This is **not** implemented as one dedicated thread per room (that doesn't
-scale — thread count would grow with concurrent meeting count, most of them
-idle). Instead, `RoomCommandDispatcher` keeps one chained
-`CompletableFuture<Void>` per room (`Map<UUID, CompletableFuture<Void>>`):
-appending a command is `tail = tail.thenRunAsync(command, executor)`, which
-guarantees that room's commands run strictly in sequence without pinning a
-thread to the room between commands. All rooms share a single
-`Executors.newVirtualThreadPerTaskExecutor()` (Java 21) — virtual threads
-are cheap enough that "one per in-flight command, across every room" is a
-non-issue at any scale this project will realistically reach, unlike
-platform threads. A failing command is logged and does not break that
-room's chain; the next command still runs.
+Trong cùng một room, các command như:
 
-`MeetingRuntime` (per-room participant map) and `MeetingRuntimeRegistry`
-(the `meetingId → MeetingRuntime` map) are the in-memory, non-persisted
-state this dispatcher protects — see
-[database/schema.md](../database/schema.md#what-is-not-persisted) for why
-none of this lives in PostgreSQL.
+```text
+join
+leave
+PING
+relay
+```
+
+phải chạy đúng theo thứ tự chúng được dispatch.
+
+Nếu không đảm bảo ordering, hai participant thực hiện hành động cùng thời điểm có thể tạo ra trạng thái không nhất quán.
+
+Ví dụ:
+
+```text
+Participant A đang join room
+```
+
+đúng lúc:
+
+```text
+Participant B đang leave
+```
+
+và B trước đó là participant cuối cùng khiến logic xóa `MeetingRuntime` được kích hoạt.
+
+Nếu hai thao tác chạy không có ordering, hệ thống có thể:
+
+```text
+xóa MeetingRuntime
+```
+
+trong khi participant mới vừa được thêm vào, hoặc các thread khác nhau quan sát hai phiên bản room state không đồng nhất.
+
+## Không dùng một thread riêng cho mỗi room
+
+Hệ thống **không** triển khai theo mô hình:
+
+```text
+Room A → Thread A
+Room B → Thread B
+Room C → Thread C
+...
+```
+
+Cách này không scale tốt vì số lượng thread sẽ tăng theo số meeting đồng thời, trong khi phần lớn các thread có thể đang idle.
+
+Thay vào đó, `RoomCommandDispatcher` giữ một chuỗi:
+
+```java
+CompletableFuture<Void>
+```
+
+cho mỗi room:
+
+```java
+Map<UUID, CompletableFuture<Void>>
+```
+
+Mỗi entry đại diện cho `tail` của command chain của room đó.
+
+Khi có command mới:
+
+```java
+tail = tail.thenRunAsync(command, executor);
+```
+
+Nhờ đó các command trong cùng room được thực thi tuần tự:
+
+```text
+Command 1
+   │
+   ▼
+Command 2
+   │
+   ▼
+Command 3
+```
+
+nhưng không cần giữ một thread cố định cho room khi room không có command nào đang chạy.
+
+Ví dụ:
+
+```text
+Room A
+JOIN A
+  ↓
+PING A
+  ↓
+RELAY OFFER
+  ↓
+LEAVE A
+```
+
+được đảm bảo chạy đúng thứ tự.
+
+Trong khi đó:
+
+```text
+Room A command
+Room B command
+Room C command
+```
+
+vẫn có thể chạy song song.
+
+## Virtual Threads
+
+Tất cả room dùng chung một executor:
+
+```java
+Executors.newVirtualThreadPerTaskExecutor()
+```
+
+với Java 21.
+
+Virtual thread có chi phí thấp hơn nhiều so với platform thread.
+
+Vì vậy mô hình:
+
+```text
+một virtual thread cho mỗi command đang thực sự chạy
+```
+
+phù hợp hơn nhiều so với:
+
+```text
+một platform thread cố định cho mỗi meeting
+```
+
+Đối với quy mô thực tế mà project này hướng tới, số lượng virtual thread cho các command đang in-flight không phải là vấn đề đáng kể.
+
+Nếu một command bị lỗi:
+
+```text
+Command 1
+   │
+   X exception
+```
+
+exception sẽ được log nhưng không làm hỏng command chain của room.
+
+Command tiếp theo vẫn tiếp tục chạy:
+
+```text
+Command 1
+   │
+   X
+   │
+   ▼
+Command 2
+   │
+   ▼
+Command 3
+```
+
+## Runtime state
+
+Hai thành phần chính được `RoomCommandDispatcher` bảo vệ là:
+
+```text
+MeetingRuntime
+MeetingRuntimeRegistry
+```
+
+`MeetingRuntime` chứa trạng thái runtime của từng room, bao gồm participant map.
+
+`MeetingRuntimeRegistry` chứa mapping:
+
+```text
+meetingId → MeetingRuntime
+```
+
+Đây là state:
+
+- chỉ tồn tại trong memory
+- không persist
+- có tính realtime
+- gắn với WebSocket session hiện tại
+
+Xem thêm:
+
+[database/schema.md](../database/schema.md#what-is-not-persisted)
+
+để biết lý do những dữ liệu này không được lưu vào PostgreSQL.
 
 ## Heartbeat
 
-Client → server `PING` every `WS_HEARTBEAT_INTERVAL_SECONDS` (default 10s,
-frontend `SignalingClient`). Server replies `PONG` and records the
-timestamp on that participant's `RuntimeParticipant`. A separate
-`HeartbeatReaper` (`@Scheduled`, checks every
-`WS_HEARTBEAT_TIMEOUT_SECONDS`-independent fixed interval, default 5s) closes
-any session whose last heartbeat is older than
-`WS_HEARTBEAT_TIMEOUT_SECONDS` (default 30s — three missed pings). Closing
-the session triggers the handler's normal `afterConnectionClosed` cleanup
-path, so the reaper doesn't duplicate any room-state or broadcast logic —
-it only decides *when* a session counts as dead.
+Client gửi:
 
-## Reconnect grace period (Milestone 8)
+```text
+PING
+```
 
-`afterConnectionClosed` doesn't remove a participant immediately for every
-close — only for a clean, client-initiated one (WebSocket close code 1000,
-which covers the "leave" button, host-remove, and waiting-room rejection,
-since all three explicitly close with that code). Anything else — a network
-drop, a suspended tab, `HeartbeatReaper` closing a stale session — is
-treated as a *possibly temporary* disconnect:
+tới server mỗi:
 
-1. The `RuntimeParticipant` stays in the room's roster (so nobody else sees
-   them vanish) but is marked `pendingRemoval` via
-   `RuntimeParticipant.markDisconnected()`.
-2. `RoomCommandDispatcher.scheduleDispatch` queues a removal command for
-   `WS_RECONNECT_GRACE_SECONDS` later (default 15s), still running through
-   the same per-room serialized queue as every other command — just
-   delayed.
-3. If the same user (matched by `userId`, not session id) opens a new
-   WebSocket connection to the same meeting before that timer fires,
-   `MeetingRuntime.reconnect()` re-points the existing `RuntimeParticipant`
-   at the new session (new map key, same object) and cancels the pending
-   removal implicitly — `expireDisconnect` looks the participant up by the
-   *old* session id, finds nothing there anymore, and no-ops.
-4. A successful reconnect sends the reconnecting client a fresh roster
-   snapshot (their own client-side state may be gone entirely, e.g. after a
-   full page reload) and broadcasts `PARTICIPANT_RECONNECTED` — not
-   `PARTICIPANT_LEFT` + `PARTICIPANT_JOINED` — to everyone else, since they
-   never saw a LEFT for this user in the first place. If the grace period
-   expires with no reconnect, `PARTICIPANT_LEFT` fires exactly as before.
+```text
+WS_HEARTBEAT_INTERVAL_SECONDS
+```
 
-The waiting-room lane does **not** get this grace period — a disconnect
-while waiting is removed immediately; reconnecting just re-enters the
-waiting lane and asks again. Not worth the added complexity for a
-pre-admission state.
+giây.
 
-This only resumes the *signaling* session/roster slot. The WebRTC media
-path is a separate concern — see
-[webrtc.md](./webrtc.md#ice-restart-milestone-8) for how peer connections
-recover independently once signaling is back.
+Giá trị mặc định:
 
-## Waiting room (Milestone 7)
+```text
+10 giây
+```
 
-`MeetingRuntime` holds two separate maps: active `participants` and
-`waitingParticipants` (sessions in the waiting lane — not in anyone's
-roster, not receiving broadcasts, not counted for "is the room empty").
-When a non-host joins a meeting whose `accessType` is `APPROVAL_REQUIRED`:
+Logic phía frontend nằm trong:
 
-1. Their session goes into the waiting map instead of the active one.
-   `PARTICIPANT_WAITING` is sent to them (an ack their request is in) and
-   to every currently-connected host.
-2. If no host is connected yet when they arrive, nothing is lost — a host
-   who joins later receives a `PARTICIPANT_WAITING` for everyone still
-   waiting, as part of their own join handling.
-3. A host decides by sending `PARTICIPANT_APPROVED` or
-   `PARTICIPANT_REJECTED` with `targetId` set to the waiting user's id.
-   The server verifies the sender is actually a `HOST` in that room's
-   runtime before acting — a non-host sending this is silently ignored, the
-   same guard as `HOST_MUTE_PARTICIPANT`/`HOST_REMOVE_PARTICIPANT` below.
-4. On approval: the waiting session gets the normal snapshot + becomes a
-   full `RuntimeParticipant`, exactly as if they'd connected directly, then
-   `PARTICIPANT_JOINED` broadcasts to the room. On rejection: the session is
-   closed with a `PARTICIPANT_REJECTED` sent first so the client can show
-   why.
+```text
+SignalingClient
+```
 
-The REST `POST /meetings/{id}/join` call already persisted their
-`meeting_participants` row *before* any of this — the waiting room is a
-purely runtime/signaling concept (see
-[database/schema.md](../database/schema.md#what-is-not-persisted)), it
-doesn't gate whether they're recorded as having joined, only whether
-they're actually present in the live room yet.
+Flow:
 
-## Chat (Milestone 7)
+```text
+Client
+   │
+   │ PING
+   ▼
+Server
+   │
+   │ PONG
+   ▼
+Client
+```
 
-`CHAT_MESSAGE` is the one event type that touches PostgreSQL:
-`SendChatMessageUseCase` persists it (validating non-empty, ≤4000 chars)
-*before* the server constructs the outbound envelope from the saved
-row's id/timestamp, then sends that to **every** participant including the
-original sender — nobody renders an unconfirmed local copy first. This
-keeps a single source of truth for message ordering and ids instead of
-reconciling an optimistic client render against what the server eventually
-persists.
+Khi nhận `PING`, server:
 
-## Host controls (Milestone 7)
+1. cập nhật heartbeat timestamp của participant tương ứng trong `RuntimeParticipant`;
+2. trả `PONG` về connection đó.
 
-`HOST_MUTE_PARTICIPANT` and `HOST_REMOVE_PARTICIPANT` both require the
-sender to hold `HOST` role in that room's runtime — checked the same way as
-waiting-room approval decisions — before anything happens:
+Ngoài ra hệ thống có một `HeartbeatReaper` chạy bằng:
 
-- **Mute**: a plain relay to the target once authorized. The target's own
-  client is what actually mutes its microphone on receipt; the server never
-  touches media state, it only delivers the instruction.
-- **Remove**: not a relay — the server closes the target's WebSocket
-  session directly. That triggers the normal `afterConnectionClosed` →
-  `handleLeave` path, which broadcasts `PARTICIPANT_LEFT` to everyone else
-  exactly as a voluntary leave would. The target is sent a
-  `HOST_REMOVE_PARTICIPANT` envelope just before the close so their client
-  can show *why* the connection ended, rather than just going silent.
+```text
+@Scheduled
+```
+
+Reaper kiểm tra các connection định kỳ.
+
+Khoảng thời gian kiểm tra độc lập với heartbeat timeout và mặc định là:
+
+```text
+5 giây
+```
+
+Nếu thời điểm heartbeat cuối cùng của một session cũ hơn:
+
+```text
+WS_HEARTBEAT_TIMEOUT_SECONDS
+```
+
+thì session đó được xem là dead.
+
+Giá trị timeout mặc định:
+
+```text
+30 giây
+```
+
+Tức tương đương khoảng ba lần `PING` liên tiếp bị miss:
+
+```text
+PING interval = 10s
+
+miss 1
+   ↓
+10s
+
+miss 2
+   ↓
+20s
+
+miss 3
+   ↓
+30s
+
+session considered dead
+```
+
+Khi timeout:
+
+```text
+HeartbeatReaper
+      │
+      ▼
+close WebSocket session
+      │
+      ▼
+afterConnectionClosed
+```
+
+Việc đóng session sẽ kích hoạt cleanup path bình thường của `SignalingWebSocketHandler`.
+
+Do đó `HeartbeatReaper` không duplicate bất kỳ logic nào liên quan tới:
+
+- remove participant khỏi room
+- update room state
+- broadcast participant leave
+- cleanup session
+
+Nó chỉ chịu trách nhiệm quyết định:
+
+> Khi nào một WebSocket session được xem là đã chết?
+
+Toàn bộ cleanup vẫn được xử lý bởi:
+
+```text
+afterConnectionClosed
+```
+
+## Reconnection
+
+Cơ chế reconnection, trong đó client kết nối lại sau timeout và tiếp tục session trước đó thay vì được xem như một participant hoàn toàn mới, hiện tại **chưa nằm trong phạm vi triển khai của milestone này**.
+
+Phần đó thuộc:
+
+```text
+Milestone 8
+```

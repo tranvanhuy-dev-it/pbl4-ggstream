@@ -3,6 +3,7 @@ package com.project.meet.participant.application;
 import com.project.meet.common.exception.ResourceNotFoundException;
 import com.project.meet.meeting.domain.Meeting;
 import com.project.meet.meeting.domain.MeetingEndedException;
+import com.project.meet.meeting.domain.MeetingNotStartedException;
 import com.project.meet.meeting.infrastructure.MeetingRepository;
 import com.project.meet.participant.api.ParticipantResponse;
 import com.project.meet.participant.domain.MeetingParticipant;
@@ -44,6 +45,9 @@ public class JoinMeetingUseCase {
 
 		if (meeting.isEnded()) {
 			throw new MeetingEndedException();
+		}
+		if (meeting.isScheduledAndNotStarted()) {
+			throw new MeetingNotStartedException();
 		}
 
 		MeetingParticipant existing = participantRepository

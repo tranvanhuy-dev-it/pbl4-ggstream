@@ -20,6 +20,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @AutoConfigureTestRestTemplate
@@ -169,5 +171,42 @@ class MeetingFlowIntegrationTest {
 
 		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
 		assertThat(response.getBody().code()).isEqualTo("MEETING_NOT_FOUND");
+	}
+
+	@Test
+	void scheduledMeetingWaitsForHostAndAppearsInCalendar() {
+		String hostToken = registerAndGetToken("schedule-host", "Host");
+		String guestToken = registerAndGetToken("schedule-guest", "Guest");
+		Instant start = Instant.now().plus(2, ChronoUnit.HOURS);
+		Instant end = start.plus(1, ChronoUnit.HOURS);
+
+		MeetingResponse meeting = restTemplate.exchange(
+				"/api/v1/meetings", HttpMethod.POST,
+				new HttpEntity<>(new CreateMeetingRequest("Lịch PBL4", null, start, end, "Asia/Ho_Chi_Minh"), authHeaders(hostToken)),
+				MeetingResponse.class).getBody();
+
+		assertThat(meeting.status()).isEqualTo(MeetingStatus.SCHEDULED);
+		assertThat(meeting.scheduledStartAt()).isEqualTo(start);
+
+		ResponseEntity<ApiError> earlyGuestJoin = restTemplate.exchange(
+				"/api/v1/meetings/" + meeting.id() + "/join", HttpMethod.POST,
+				new HttpEntity<>(authHeaders(guestToken)), ApiError.class);
+		assertThat(earlyGuestJoin.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+		assertThat(earlyGuestJoin.getBody().code()).isEqualTo("MEETING_NOT_STARTED");
+
+		ResponseEntity<MeetingResponse[]> calendar = restTemplate.exchange(
+				"/api/v1/meetings/mine?from=" + start.minus(1, ChronoUnit.HOURS) + "&to=" + end.plus(1, ChronoUnit.HOURS),
+				HttpMethod.GET, new HttpEntity<>(authHeaders(hostToken)), MeetingResponse[].class);
+		assertThat(calendar.getBody()).extracting(MeetingResponse::id).contains(meeting.id());
+
+		MeetingResponse active = restTemplate.exchange(
+				"/api/v1/meetings/" + meeting.id() + "/start", HttpMethod.POST,
+				new HttpEntity<>(authHeaders(hostToken)), MeetingResponse.class).getBody();
+		assertThat(active.status()).isEqualTo(MeetingStatus.ACTIVE);
+
+		ResponseEntity<ParticipantResponse> guestJoin = restTemplate.exchange(
+				"/api/v1/meetings/" + meeting.id() + "/join", HttpMethod.POST,
+				new HttpEntity<>(authHeaders(guestToken)), ParticipantResponse.class);
+		assertThat(guestJoin.getStatusCode()).isEqualTo(HttpStatus.OK);
 	}
 }

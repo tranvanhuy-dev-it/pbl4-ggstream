@@ -17,6 +17,9 @@ import {
   PeopleIcon,
   PinIcon,
   PhoneHangupIcon,
+  NetworkStatsIcon,
+  EndMeetingIcon,
+  RemoveParticipantIcon,
 } from "@/components/icons";
 import * as meetingApi from "@/features/meeting/api/meetingApi";
 import type { Meeting } from "@/features/meeting/api/meetingApi";
@@ -25,6 +28,10 @@ import { useWebRtcPeers } from "@/features/meeting/hooks/useWebRtcPeers";
 import { useScreenShare } from "@/features/meeting/hooks/useScreenShare";
 import { ParticipantsPanel, type WaitingRequest, type RosterEntry } from "@/features/meeting/components/ParticipantsPanel";
 import { ChatPanel } from "@/features/chat/components/ChatPanel";
+import { MeetingTopbar } from "@/features/meeting/components/MeetingTopbar";
+import { ScreenShareBanner } from "@/features/meeting/components/ScreenShareBanner";
+import { NetworkDiagnosticsPanel } from "@/features/meeting/components/NetworkDiagnosticsPanel";
+import { useWebRtcStats } from "@/features/meeting/hooks/useWebRtcStats";
 import * as chatApi from "@/features/chat/api/chatApi";
 import type { ChatMessage } from "@/features/chat/api/chatApi";
 import type { ParticipantPresencePayload, SignalingEnvelope } from "@/lib/websocket/types";
@@ -45,10 +52,12 @@ export function MeetingRoomView({ code }: { code: string }) {
   const [waitingRequests, setWaitingRequests] = useState<WaitingRequest[]>([]);
   const [sharingUserId, setSharingUserId] = useState<string | null>(null);
   const [removedByHost, setRemovedByHost] = useState(false);
-  const [activePanel, setActivePanel] = useState<"none" | "chat" | "participants">("none");
+  const [meetingEndedByHost, setMeetingEndedByHost] = useState(false);
+  const [activePanel, setActivePanel] = useState<"none" | "chat" | "participants" | "diagnostics">("none");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [joinNotice, setJoinNotice] = useState<string | null>(null);
   const [pinnedKey, setPinnedKey] = useState<string | null>(null);
+  const [participantMicStates, setParticipantMicStates] = useState<Map<string, boolean>>(new Map());
 
   useEffect(() => {
     if (authStatus === "unauthenticated") {
@@ -113,13 +122,16 @@ export function MeetingRoomView({ code }: { code: string }) {
     startScreenShare,
     stopScreenShare,
     isScreenSharing,
+    manager,
   } = useWebRtcPeers(user?.id ?? null, stream, peerIds, send, token);
+  const networkStats = useWebRtcStats(manager, activePanel === "diagnostics");
 
   function handleSignalingMessage(envelope: SignalingEnvelope) {
     switch (envelope.type) {
       case "PARTICIPANT_JOINED": {
         const presence = envelope.payload as ParticipantPresencePayload;
         setParticipants((prev) => new Map(prev).set(presence.userId, presence));
+        send({ type: "MIC_STATE_CHANGED", payload: { enabled: micEnabled } });
         break;
       }
       case "PARTICIPANT_LEFT": {
@@ -159,10 +171,24 @@ export function MeetingRoomView({ code }: { code: string }) {
         }
         break;
       case "HOST_MUTE_PARTICIPANT":
-        if (micEnabled) toggleMic();
+        if (micEnabled) {
+          toggleMic();
+          send({ type: "MIC_STATE_CHANGED", payload: { enabled: false } });
+        }
         break;
+      case "MIC_STATE_CHANGED": {
+        const payload = envelope.payload as { enabled?: boolean };
+        if (envelope.senderId && typeof payload?.enabled === "boolean") {
+          setParticipantMicStates((prev) => new Map(prev).set(envelope.senderId as string, payload.enabled as boolean));
+        }
+        break;
+      }
       case "HOST_REMOVE_PARTICIPANT":
         setRemovedByHost(true);
+        break;
+      case "MEETING_ENDED":
+        stopLocalMedia();
+        setMeetingEndedByHost(true);
         break;
       case "SCREEN_SHARE_STARTED":
         setSharingUserId(envelope.senderId);
@@ -201,6 +227,12 @@ export function MeetingRoomView({ code }: { code: string }) {
     }
   }, [removedByHost, router, stopLocalMedia]);
 
+  useEffect(() => {
+    if (!meetingEndedByHost) return;
+    const timer = setTimeout(() => router.push("/"), 3000);
+    return () => clearTimeout(timer);
+  }, [meetingEndedByHost, router]);
+
   const handleLeave = useCallback(async () => {
     if (!meeting || !token) return;
     setLeaving(true);
@@ -218,10 +250,11 @@ export function MeetingRoomView({ code }: { code: string }) {
     stopLocalMedia();
     try {
       await meetingApi.endMeeting(token, meeting.id);
+      send({ type: "MEETING_ENDED" });
     } finally {
       router.push("/");
     }
-  }, [meeting, token, router, stopLocalMedia]);
+  }, [meeting, token, router, stopLocalMedia, send]);
 
   const handleToggleScreenShare = useCallback(async () => {
     if (isScreenSharing) {
@@ -261,6 +294,12 @@ export function MeetingRoomView({ code }: { code: string }) {
     send({ type: "HOST_MUTE_PARTICIPANT", targetId: userId });
   }, [send]);
 
+  const handleToggleMic = useCallback(() => {
+    const nextEnabled = !micEnabled;
+    toggleMic();
+    send({ type: "MIC_STATE_CHANGED", payload: { enabled: nextEnabled } });
+  }, [micEnabled, toggleMic, send]);
+
   const handleRemoveParticipant = useCallback((userId: string) => {
     send({ type: "HOST_REMOVE_PARTICIPANT", targetId: userId });
   }, [send]);
@@ -286,6 +325,19 @@ export function MeetingRoomView({ code }: { code: string }) {
       <main className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
         <h1 className="text-xl font-semibold">Bạn đã bị đưa ra khỏi cuộc họp</h1>
         <p className="text-sm text-muted">Chủ phòng đã đưa bạn ra khỏi &ldquo;{meeting.title}&rdquo;.</p>
+      </main>
+    );
+  }
+
+  if (meetingEndedByHost) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[var(--stage)] px-6 text-center">
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-danger/15 text-danger">
+          {EndMeetingIcon}
+        </div>
+        <h1 className="text-xl font-semibold">Cuộc họp đã kết thúc</h1>
+        <p className="text-sm text-muted">Chủ phòng đã kết thúc &ldquo;{meeting.title}&rdquo;.</p>
+        <p className="text-xs text-muted">Bạn sẽ được chuyển về trang chủ sau ít giây.</p>
       </main>
     );
   }
@@ -323,14 +375,16 @@ export function MeetingRoomView({ code }: { code: string }) {
     : null;
 
   const roster: RosterEntry[] = [
-    { userId: user?.id ?? "", displayName: user?.displayName ?? "Bạn", isSelf: true, isHost },
+    { userId: user?.id ?? "", displayName: user?.displayName ?? "Bạn", isSelf: true, isHost, micEnabled },
     ...remoteParticipants.map((p) => ({
       userId: p.userId,
       displayName: p.displayName,
       isSelf: false,
       isHost: p.userId === meeting.hostId,
+      micEnabled: participantMicStates.get(p.userId) ?? true,
     })),
   ];
+  const participantNames = new Map(roster.map((participant) => [participant.userId, participant.displayName]));
 
   type Tile = { key: string; stream: MediaStream | null; active: boolean; displayName: string; label: string; userId: string | null; muted: boolean; mirrored: boolean };
 
@@ -370,6 +424,16 @@ export function MeetingRoomView({ code }: { code: string }) {
   const allTiles = [selfTile, ...remoteTiles, ...(screenTile ? [screenTile] : [])];
   const pinnedTile = allTiles.find((t) => t.key === pinnedKey) ?? null;
   const otherTiles = pinnedTile ? allTiles.filter((t) => t.key !== pinnedTile.key) : allTiles;
+  const gridColumns =
+    allTiles.length === 1
+      ? "grid-cols-1"
+      : allTiles.length === 2
+        ? "grid-cols-1 md:grid-cols-2"
+        : allTiles.length <= 4
+          ? "grid-cols-1 sm:grid-cols-2"
+          : allTiles.length <= 6
+            ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+            : "grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4";
 
   function renderTileOverlay(tile: Tile) {
     return (
@@ -378,27 +442,30 @@ export function MeetingRoomView({ code }: { code: string }) {
           onClick={() => setPinnedKey((prev) => (prev === tile.key ? null : tile.key))}
           title={pinnedKey === tile.key ? "Bỏ ghim" : "Ghim khung hình này"}
           aria-label={pinnedKey === tile.key ? "Bỏ ghim" : "Ghim khung hình này"}
-          className={`absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full text-white transition-colors ${
+          className={`absolute left-2 top-2 flex h-8 w-8 items-center justify-center rounded-full text-white opacity-0 transition-all group-hover:opacity-100 group-focus-within:opacity-100 ${
             pinnedKey === tile.key ? "bg-accent" : "bg-black/60 hover:bg-black/80"
           }`}
         >
           {PinIcon}
         </button>
         {isHost && tile.userId && tile.userId !== user?.id && !tile.key.startsWith("screen:") && (
-          <div className="absolute right-2 top-2 flex gap-1">
+          <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
             <button
               onClick={() => handleMuteParticipant(tile.userId as string)}
-              title="Tắt micro người này"
-              className="rounded bg-black/60 px-2 py-1 text-xs text-white hover:bg-black/80"
+              disabled={participantMicStates.get(tile.userId) === false}
+              aria-label={participantMicStates.get(tile.userId) === false ? `${tile.displayName} đã tắt micro` : `Tắt micro của ${tile.displayName}`}
+              title={participantMicStates.get(tile.userId) === false ? "Người này đã tắt micro" : "Tắt micro người này"}
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 disabled:cursor-default disabled:text-white/65 [&>svg]:h-4 [&>svg]:w-4"
             >
-              Tắt tiếng
+              {participantMicStates.get(tile.userId) === false ? MicOffIcon : MicOnIcon}
             </button>
             <button
               onClick={() => handleRemoveParticipant(tile.userId as string)}
-              title="Đưa người này ra khỏi cuộc họp"
-              className="rounded bg-danger/80 px-2 py-1 text-xs text-white hover:bg-danger"
+              aria-label={`Mời ${tile.displayName} ra khỏi cuộc họp`}
+              title="Mời người này ra khỏi cuộc họp"
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white hover:bg-danger/90 [&>svg]:h-4 [&>svg]:w-4"
             >
-              Xóa
+              {RemoveParticipantIcon}
             </button>
           </div>
         )}
@@ -407,36 +474,14 @@ export function MeetingRoomView({ code }: { code: string }) {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <main className="flex min-w-0 flex-1 flex-col gap-4 overflow-hidden px-6 py-6">
-        <header className="flex flex-shrink-0 flex-col gap-1">
-          <h1 className="text-xl font-semibold tracking-tight">{meeting.title}</h1>
-          <div className="flex items-center gap-2 text-sm text-muted">
-            <span>Mã: {meeting.code}</span>
-            <span aria-hidden="true">·</span>
-            <span className="inline-flex items-center gap-1.5">
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  socketStatus === "open"
-                    ? "bg-green-500"
-                    : socketStatus === "connecting" || socketStatus === "reconnecting"
-                      ? "animate-pulse bg-yellow-400"
-                      : "bg-red-500"
-                }`}
-              />
-              {socketStatus === "open"
-                ? "Đang hoạt động"
-                : socketStatus === "connecting"
-                  ? "Đang kết nối…"
-                  : socketStatus === "reconnecting"
-                    ? "Mất kết nối, đang thử lại…"
-                    : "Mất kết nối"}
-            </span>
-          </div>
-        </header>
+    <div className="flex h-dvh flex-col overflow-hidden">
+      <MeetingTopbar title={meeting.title} code={meeting.code} socketStatus={socketStatus} />
+      <div className="relative flex min-h-0 flex-1 overflow-hidden pb-[4.75rem]">
+        <main className="flex min-w-0 flex-1 flex-col gap-3 overflow-hidden bg-[var(--stage)] px-3 py-3 md:gap-4 md:px-5 md:py-4">
 
         {mediaError && <p className="flex-shrink-0 text-sm text-danger">{mediaError}</p>}
         {screenShare.error && <p className="flex-shrink-0 text-sm text-danger">{screenShare.error}</p>}
+        {isScreenSharing && <ScreenShareBanner onStop={handleToggleScreenShare} />}
         {joinNotice && (
           <div className="flex flex-shrink-0 items-center justify-between gap-3 rounded-lg border border-accent/30 bg-accent/10 px-3 py-2 text-sm">
             <span>{joinNotice}</span>
@@ -460,6 +505,7 @@ export function MeetingRoomView({ code }: { code: string }) {
                 mirrored={pinnedTile.mirrored}
                 muted={pinnedTile.muted}
                 fill
+                fit={pinnedTile.key.startsWith("screen:") ? "contain" : "cover"}
               >
                 {renderTileOverlay(pinnedTile)}
               </VideoTile>
@@ -482,28 +528,39 @@ export function MeetingRoomView({ code }: { code: string }) {
             </div>
           </div>
         ) : (
-          <section className="grid min-h-0 flex-1 auto-rows-fr grid-cols-1 gap-4 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
+          <section className={`grid min-h-0 flex-1 auto-rows-fr gap-3 overflow-hidden md:gap-4 ${gridColumns}`}>
             {allTiles.map((tile) => (
-              <div key={tile.key} className="relative">
-                <VideoTile
-                  stream={tile.stream}
-                  active={tile.active}
-                  displayName={tile.displayName}
-                  label={tile.label}
-                  mirrored={tile.mirrored}
-                  muted={tile.muted}
+              <div
+                key={tile.key}
+                className="flex min-h-0 items-center justify-center overflow-hidden"
+                style={{ containerType: "size" }}
+              >
+                <div
+                  className="relative aspect-video"
+                  style={{ width: "min(100cqw, 177.78cqh)" }}
                 >
-                  {renderTileOverlay(tile)}
-                </VideoTile>
+                  <VideoTile
+                    stream={tile.stream}
+                    active={tile.active}
+                    displayName={tile.displayName}
+                    label={tile.label}
+                    mirrored={tile.mirrored}
+                    muted={tile.muted}
+                    fill
+                    fit={tile.key.startsWith("screen:") ? "contain" : "cover"}
+                  >
+                    {renderTileOverlay(tile)}
+                  </VideoTile>
+                </div>
               </div>
             ))}
           </section>
         )}
 
-        <div className="flex flex-shrink-0 justify-center gap-3 pt-2">
+        <div className="absolute bottom-3 left-3 right-3 z-30 flex items-center justify-start gap-2 overflow-x-auto rounded-xl border border-card-border bg-card/95 p-2 shadow-sm backdrop-blur sm:justify-center md:left-5 md:right-5 md:gap-3">
           <MediaToggleButton
             enabled={micEnabled}
-            onClick={toggleMic}
+            onClick={handleToggleMic}
             label={micEnabled ? "Tắt micro" : "Bật micro"}
             enabledIcon={MicOnIcon}
             disabledIcon={MicOffIcon}
@@ -543,6 +600,13 @@ export function MeetingRoomView({ code }: { code: string }) {
             enabledIcon={ChatIcon}
             disabledIcon={ChatIcon}
           />
+          <MediaToggleButton
+            enabled={activePanel !== "diagnostics"}
+            onClick={() => setActivePanel((value) => value === "diagnostics" ? "none" : "diagnostics")}
+            label={activePanel === "diagnostics" ? "Đóng chẩn đoán mạng" : "Mở chẩn đoán mạng"}
+            enabledIcon={NetworkStatsIcon}
+            disabledIcon={NetworkStatsIcon}
+          />
           <button
             onClick={handleLeave}
             disabled={leaving}
@@ -556,23 +620,28 @@ export function MeetingRoomView({ code }: { code: string }) {
             <button
               onClick={handleEnd}
               disabled={leaving}
-              className="rounded-full border border-danger-border bg-danger-bg px-4 text-sm font-medium text-danger transition-opacity hover:opacity-90 disabled:opacity-60"
+              aria-label="Kết thúc cuộc họp cho tất cả"
+              title="Kết thúc cuộc họp cho tất cả"
+              className="flex h-11 w-11 items-center justify-center rounded-full border border-danger-border bg-danger-bg text-danger transition-colors hover:bg-danger hover:text-white disabled:opacity-60"
             >
-              Kết thúc cho tất cả
+              {EndMeetingIcon}
             </button>
           )}
         </div>
-      </main>
+        </main>
 
       {activePanel === "chat" && (
+        <div className="absolute inset-0 z-20 flex justify-end sm:static [&>aside]:w-full sm:[&>aside]:w-80">
         <ChatPanel
           messages={chatMessages}
           currentUserId={user?.id ?? null}
           onSend={handleSendChat}
           onClose={() => setActivePanel("none")}
         />
+        </div>
       )}
       {activePanel === "participants" && (
+        <div className="absolute inset-0 z-20 flex justify-end sm:static [&>aside]:w-full sm:[&>aside]:w-80">
         <ParticipantsPanel
           waiting={waitingRequests}
           roster={roster}
@@ -583,7 +652,18 @@ export function MeetingRoomView({ code }: { code: string }) {
           onRemove={handleRemoveParticipant}
           onClose={() => setActivePanel("none")}
         />
+        </div>
       )}
+      {activePanel === "diagnostics" && (
+        <div className="absolute inset-0 z-20 flex justify-end sm:static [&>aside]:w-full sm:[&>aside]:w-80">
+          <NetworkDiagnosticsPanel
+            stats={networkStats}
+            participantNames={participantNames}
+            onClose={() => setActivePanel("none")}
+          />
+        </div>
+      )}
+      </div>
     </div>
   );
 }
