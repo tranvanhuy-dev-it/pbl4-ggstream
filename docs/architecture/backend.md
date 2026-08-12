@@ -16,8 +16,8 @@ com.project.meet
 │   └── web/             # RequestIdFilter (request correlation)
 ├── auth/              # register/login use cases, JWT issuance
 ├── user/              # User entity, UserRepository, GET /users/me
-├── meeting/           # Milestone 2
-├── participant/       # Milestone 2
+├── meeting/           # Meeting entity, create/get/end use cases, code generator
+├── participant/       # MeetingParticipant entity, join/leave/list use cases
 ├── signaling/         # Milestone 3
 ├── chat/              # Milestone 7
 ├── media/             # media abstraction (Mesh → SFU), Milestone 4+
@@ -141,6 +141,35 @@ Controllers read the current user via
 `@AuthenticationPrincipal AuthenticatedUser principal` (see
 `UserController.me`) — never by re-parsing the token or querying
 `SecurityContextHolder` directly in application code.
+
+## Meeting domain (Milestone 2)
+
+State machine: `CREATED → ACTIVE → ENDED` (`WAITING` is reserved for the
+Milestone 7 approval/waiting-room flow and unused today). A meeting is
+created in `CREATED` and only flips to `ACTIVE` on the *first successful
+join* — including the host's own join, since creating a meeting and being
+present in it are deliberately separate actions (`CreateMeetingUseCase` vs.
+`JoinMeetingUseCase`). This mirrors real usage: a host can generate a join
+link before anyone, including themselves, has actually entered.
+
+Host vs. participant role isn't a separate field the client sets — `Meeting
+.isHostedBy(userId)` (comparing against `host`) decides it at join time, so
+it can't drift out of sync with who actually created the meeting.
+
+Join and leave are both idempotent, for the same reason: a page refresh or
+a flaky network re-sends the same request, and that should be a no-op, not
+an error.
+- **Join**: if an active (`leftAt IS NULL`) `meeting_participants` row
+  already exists for (meeting, user), it's returned as-is rather than
+  creating a duplicate.
+- **Leave**: finds that same active row and stamps `leftAt`; leaving without
+  ever having joined is a genuine `404 NOT_IN_MEETING`, not silently ignored,
+  since that case usually means the client's state is wrong.
+
+Ending a meeting is host-only (`403 NOT_MEETING_HOST` otherwise) and, beyond
+marking the meeting `ENDED`, also force-closes every still-active
+participant row — so "who was in the meeting when it ended" is always an
+accurate query, not something the client has to reconstruct.
 
 ## Media abstraction
 

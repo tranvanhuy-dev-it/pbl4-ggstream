@@ -42,6 +42,30 @@ user's profile. `401 UNAUTHENTICATED` if the header is missing or the token
 is invalid/expired — exists primarily to prove the JWT filter chain works
 end to end; the frontend doesn't call it beyond session rehydration on load.
 
+### `POST /api/v1/meetings`
+
+Body: `{ "title", "accessType"? }` (`accessType` defaults to `PUBLIC`; `INVITED`/`APPROVAL_REQUIRED` are stored but not yet enforced — that's the Milestone 7 waiting room). Returns `201` with a `MeetingResponse`, including a generated join code (`abc-defg-hij` style, collision-checked against the DB). The caller becomes `hostId` but is **not** automatically a participant — they still call `/join` like anyone else, which is what actually creates their `meeting_participants` row and (for the host specifically) flips the meeting `CREATED → ACTIVE`.
+
+### `GET /api/v1/meetings/{meetingId}` / `GET /api/v1/meetings/code/{code}`
+
+Fetch meeting metadata (title, host, status, access type, timestamps). The lobby uses the by-code variant to resolve a join link before the user has the meeting's UUID. `404 MEETING_NOT_FOUND` if it doesn't exist.
+
+### `POST /api/v1/meetings/{meetingId}/join`
+
+Creates (or, if already an active participant, idempotently returns) a `meeting_participants` row for the caller — `HOST` role if they're the meeting's host, `PARTICIPANT` otherwise. First join transitions the meeting `CREATED → ACTIVE`. `409 MEETING_ENDED` if the meeting has already ended.
+
+### `POST /api/v1/meetings/{meetingId}/leave`
+
+Marks the caller's active participant row `leftAt = now`. `404 NOT_IN_MEETING` if they don't currently have an active row (e.g. double leave-click, or never joined).
+
+### `POST /api/v1/meetings/{meetingId}/end`
+
+Host-only — `403 NOT_MEETING_HOST` otherwise. Marks the meeting `ENDED` and closes every still-active participant row. Idempotent: ending an already-ended meeting just returns its current state.
+
+### `GET /api/v1/meetings/{meetingId}/participants`
+
+Lists currently-active participants (`leftAt IS NULL`) — used by the room page, currently via polling (see [architecture/backend.md](../architecture/backend.md#concurrency-model-introduced-milestone-3) for why this becomes a WebSocket push in Milestone 3).
+
 ## Authentication
 
 Every route except `/actuator/health` and `/api/v1/auth/**` requires a
@@ -73,14 +97,6 @@ Every non-2xx response from `/api/v1/**` uses the shape documented in
 ## Planned endpoints
 
 ```
-POST /api/v1/meetings                   Milestone 2
-GET  /api/v1/meetings/{meetingId}       Milestone 2
-GET  /api/v1/meetings/code/{code}       Milestone 2
-POST /api/v1/meetings/{meetingId}/join  Milestone 2
-POST /api/v1/meetings/{meetingId}/leave Milestone 2
-POST /api/v1/meetings/{meetingId}/end   Milestone 2
-GET  /api/v1/meetings/{meetingId}/participants  Milestone 2
-
 GET  /api/v1/rtc/ice-servers            Milestone 5 (temporary TURN credentials)
 ```
 

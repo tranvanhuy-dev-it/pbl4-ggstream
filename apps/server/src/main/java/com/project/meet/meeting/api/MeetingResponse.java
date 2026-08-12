@@ -1,0 +1,37 @@
+package com.project.meet.meeting.api;
+
+import com.project.meet.meeting.domain.Meeting;
+import com.project.meet.meeting.domain.MeetingAccessType;
+import com.project.meet.meeting.domain.MeetingStatus;
+
+import java.time.Instant;
+import java.util.UUID;
+
+public record MeetingResponse(
+		UUID id,
+		String code,
+		String title,
+		UUID hostId,
+		String hostDisplayName,
+		MeetingStatus status,
+		MeetingAccessType accessType,
+		Instant createdAt,
+		Instant startedAt,
+		Instant endedAt
+) {
+
+	public static MeetingResponse from(Meeting meeting) {
+		return new MeetingResponse(
+				meeting.getId(),
+				meeting.getCode(),
+				meeting.getTitle(),
+				meeting.getHost().getId(),
+				meeting.getHost().getDisplayName(),
+				meeting.getStatus(),
+				meeting.getAccessType(),
+				meeting.getCreatedAt(),
+				meeting.getStartedAt(),
+				meeting.getEndedAt()
+		);
+	}
+}

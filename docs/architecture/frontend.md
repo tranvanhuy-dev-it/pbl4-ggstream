@@ -24,8 +24,28 @@ src/
 
 As with the backend, folders are created when the feature that needs them
 lands (see the milestone order in the root README), not pre-scaffolded
-empty. At Milestone 0 the only pieces that exist are `lib/api` and
-`components/`.
+empty. `features/auth` (Milestone 1) and `features/meeting` /
+`features/lobby` (Milestone 2) exist now; `lib/websocket` and `lib/webrtc`
+land with Milestone 3/4.
+
+## Meeting & lobby (Milestone 2)
+
+- `features/meeting/api/meetingApi.ts` — thin wrappers over `apiFetch` for
+  create/get/join/leave/end/participants, each taking the JWT explicitly
+  (no ambient auth state inside the API layer — the caller decides).
+- `features/lobby/hooks/useLocalMedia.ts` — requests
+  `getUserMedia({video:true,audio:true})` on mount, exposes the
+  `MediaStream` plus mic/camera toggle functions that just flip
+  `track.enabled` (no renegotiation involved, since there's no peer
+  connection yet — that's Milestone 4). This is the only piece of "real"
+  WebRTC-adjacent browser API in the app so far; `RTCPeerConnection` itself
+  doesn't appear until Milestone 4, layered on top of the same stream this
+  hook produces.
+- `features/meeting/components/MeetingRoomView.tsx` polls
+  `GET .../participants` every 4s as a stand-in for realtime updates —
+  explicitly temporary, replaced by `PARTICIPANT_JOINED`/`PARTICIPANT_LEFT`
+  WebSocket events once signaling exists (Milestone 3). Documented in the
+  component itself so it isn't mistaken for the intended final design.
 
 ## Why `page.tsx` stays thin
 

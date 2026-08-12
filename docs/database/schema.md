@@ -19,8 +19,8 @@ migrations without changing anything else in the architecture.
 
 ## Tables
 
-`users` is implemented (Milestone 1). `meetings`/`meeting_participants`
-(Milestone 2) and `chat_messages` (Milestone 7) are still planned.
+`users`, `meetings`, and `meeting_participants` are implemented. Only
+`chat_messages` (Milestone 7) is still planned.
 
 ### `users`
 
@@ -34,7 +34,7 @@ migrations without changing anything else in the architecture.
 | created_at     | timestamp |                              |
 | updated_at     | timestamp |                              |
 
-### `meetings` (Milestone 2)
+### `meetings`
 
 | column      | type      | notes                                       |
 |-------------|-----------|-----------------------------------------------|
@@ -48,17 +48,23 @@ migrations without changing anything else in the architecture.
 | started_at  | timestamp | nullable                                     |
 | ended_at    | timestamp | nullable                                     |
 
-### `meeting_participants` (Milestone 2)
+### `meeting_participants`
 
 | column       | type      | notes                                  |
 |--------------|-----------|------------------------------------------|
 | id           | UUID (PK) |                                          |
 | meeting_id   | UUID (FK → meetings) |                               |
-| user_id      | UUID (FK → users) | nullable — anonymous participants |
+| user_id      | UUID (FK → users) | nullable — reserved for anonymous/guest participants, always populated today |
 | display_name | text      |                                          |
 | role         | enum      | HOST, CO_HOST, PARTICIPANT              |
 | joined_at    | timestamp |                                          |
 | left_at      | timestamp | nullable                                |
+
+One row per join/leave session, not one row per (meeting, user) — rejoining
+after leaving inserts a new row rather than reusing the old one, so a
+meeting's full attendance history is reconstructable from this table alone.
+`meetingId`/`userId` combined with `leftAt IS NULL` identifies the *current*
+active session for a user in a meeting.
 
 ### `chat_messages` (Milestone 7)
 

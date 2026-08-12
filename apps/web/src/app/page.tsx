@@ -3,32 +3,33 @@
 import Link from "next/link";
 import { BackendStatus } from "@/components/BackendStatus";
 import { useAuth } from "@/features/auth/context/AuthContext";
+import { CreateJoinMeeting } from "@/features/meeting/components/CreateJoinMeeting";
 
 export default function Home() {
   const { status, user, logout } = useAuth();
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center gap-6 px-6 text-center">
+    <main className="flex min-h-screen flex-col items-center justify-center gap-6 px-6 py-12 text-center">
       <h1 className="text-3xl font-semibold tracking-tight">Meet Platform</h1>
-      <p className="text-sm text-black/60 dark:text-white/60 max-w-md">
-        Realtime meeting platform foundation. Meeting creation lands in the
-        next milestone.
+      <p className="max-w-md text-sm text-muted">
+        Realtime meeting platform. WebRTC calling lands in the next milestone
+        — for now, meetings can be created and joined.
       </p>
       <BackendStatus />
 
-      {status === "loading" && <p className="text-sm text-black/50 dark:text-white/50">Loading…</p>}
+      {status === "loading" && <p className="text-sm text-muted">Loading…</p>}
 
       {status === "unauthenticated" && (
         <div className="flex gap-3">
           <Link
             href="/login"
-            className="rounded-md border border-black/15 dark:border-white/20 px-4 py-2 text-sm font-medium"
+            className="rounded-lg border border-input-border px-4 py-2 text-sm font-medium transition-colors hover:bg-black/5 dark:hover:bg-white/10"
           >
             Sign in
           </Link>
           <Link
             href="/register"
-            className="rounded-md bg-foreground text-background px-4 py-2 text-sm font-medium"
+            className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover"
           >
             Register
           </Link>
@@ -36,16 +37,16 @@ export default function Home() {
       )}
 
       {status === "authenticated" && user && (
-        <div className="flex flex-col items-center gap-3">
-          <p className="text-sm">
-            Signed in as <span className="font-medium">{user.displayName}</span> ({user.email})
-          </p>
-          <button
-            onClick={logout}
-            className="rounded-md border border-black/15 dark:border-white/20 px-4 py-2 text-sm font-medium"
-          >
-            Sign out
-          </button>
+        <div className="flex flex-col items-center gap-6">
+          <div className="flex items-center gap-3 text-sm">
+            <span>
+              Signed in as <span className="font-medium">{user.displayName}</span>
+            </span>
+            <button onClick={logout} className="text-muted hover:underline">
+              Sign out
+            </button>
+          </div>
+          <CreateJoinMeeting />
         </div>
       )}
     </main>
