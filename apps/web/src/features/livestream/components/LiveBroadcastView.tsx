@@ -5,20 +5,18 @@ import Link from "next/link";
 import { useAuth } from "@/features/auth/context/AuthContext";
 import { useLocalMedia } from "@/hooks/useLocalMedia";
 import { VideoTile } from "@/components/VideoTile";
-import { MediaToggleButton } from "@/components/MediaToggleButton";
-import { MicOnIcon, MicOffIcon, CameraOnIcon, CameraOffIcon, LivestreamIcon } from "@/components/icons";
-import * as meetingApi from "@/features/meeting/api/meetingApi";
+import { MicOnIcon, MicOffIcon, CameraOnIcon, CameraOffIcon, LivestreamIcon, PhoneHangupIcon } from "@/components/icons";
 import * as livestreamApi from "@/features/livestream/api/livestreamApi";
+import type { LivestreamState } from "@/features/livestream/api/livestreamApi";
 import { useLivestreamBroadcaster } from "@/features/livestream/hooks/useLivestreamBroadcaster";
 import { ApiClientError } from "@/lib/api/client";
 
 /**
- * Standalone "go live" screen — no meeting to join, no participants,
- * TikTok/YouTube-Live-style. Backed by the same livestream pipeline as
- * LivestreamControls.tsx (in-meeting), just entered from a different
- * place: a hidden Meeting row is created purely as the channel identity
- * (unique code for the /watch/{code} link, host check reuse) and is never
- * shown anywhere in the meeting UI — see docs/networking/livestream.md.
+ * Standalone "go live" studio — a broadcast stage, not a meeting screen.
+ * Livestream is its own feature: going live never creates, joins, or
+ * touches a meeting in any way — see docs/networking/livestream.md. Full-
+ * bleed camera preview with floating controls, closer to TikTok/YouTube
+ * Live's own broadcaster view than to the meeting lobby/room.
  */
 export function LiveBroadcastView() {
   const { status: authStatus, user, token } = useAuth();
@@ -28,8 +26,9 @@ export function LiveBroadcastView() {
   const [title, setTitle] = useState("");
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [meeting, setMeeting] = useState<meetingApi.Meeting | null>(null);
-  const meetingRef = useRef<meetingApi.Meeting | null>(null);
+  const [live, setLive] = useState<LivestreamState | null>(null);
+  const [copied, setCopied] = useState(false);
+  const liveRef = useRef<LivestreamState | null>(null);
 
   useEffect(() => {
     if (user) setTitle((current) => current || `${user.displayName} đang phát trực tiếp`);
@@ -37,13 +36,12 @@ export function LiveBroadcastView() {
 
   const handleStop = useCallback(async () => {
     broadcaster.stop();
-    const live = meetingRef.current;
-    meetingRef.current = null;
-    setMeeting(null);
-    if (live && token) {
+    const current = liveRef.current;
+    liveRef.current = null;
+    setLive(null);
+    if (current?.id && token) {
       try {
-        await livestreamApi.stopLivestream(token, live.id);
-        await meetingApi.endMeeting(token, live.id);
+        await livestreamApi.stopLivestream(token, current.id);
       } catch {
         // best-effort — the browser side has already stopped either way
       }
@@ -54,9 +52,9 @@ export function LiveBroadcastView() {
   // pressing "stop" — avoids leaving an FFmpeg process running forever.
   useEffect(() => {
     return () => {
-      const live = meetingRef.current;
-      if (live && token) {
-        livestreamApi.stopLivestream(token, live.id).catch(() => undefined);
+      const current = liveRef.current;
+      if (current?.id && token) {
+        livestreamApi.stopLivestream(token, current.id).catch(() => undefined);
       }
     };
   }, [token]);
@@ -69,11 +67,10 @@ export function LiveBroadcastView() {
     setStarting(true);
     setError(null);
     try {
-      const created = await meetingApi.createMeeting(token, title.trim() || "Livestream");
-      await livestreamApi.startLivestream(token, created.id);
-      meetingRef.current = created;
-      setMeeting(created);
-      broadcaster.start(created.id, token, stream);
+      const started = await livestreamApi.startLivestream(token, title.trim() || undefined);
+      liveRef.current = started;
+      setLive(started);
+      if (started.id) broadcaster.start(started.id, token, stream);
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : "Không thể bắt đầu livestream");
     } finally {
@@ -81,105 +78,127 @@ export function LiveBroadcastView() {
     }
   }, [broadcaster, stream, title, token]);
 
+  const watchUrl = live && typeof window !== "undefined" ? `${window.location.origin}/watch/${live.code}` : null;
+
+  const handleCopyLink = useCallback(() => {
+    if (!watchUrl) return;
+    navigator.clipboard?.writeText(watchUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [watchUrl]);
+
   if (authStatus !== "authenticated") {
     return (
-      <main className="flex min-h-screen items-center justify-center">
-        <p className="text-sm text-muted">Đang tải…</p>
+      <main className="flex min-h-screen items-center justify-center bg-black">
+        <p className="text-sm text-white/60">Đang tải…</p>
       </main>
     );
   }
 
-  const watchUrl = meeting && typeof window !== "undefined" ? `${window.location.origin}/watch/${meeting.code}` : null;
+  const isLive = broadcaster.isBroadcasting;
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="flex h-16 flex-shrink-0 items-center justify-between border-b border-card-border px-4 lg:px-7">
-        <Link href="/" className="text-sm font-medium text-muted hover:text-foreground">
-          ← Về trang chủ
-        </Link>
-        <h1 className="flex items-center gap-2 text-sm font-semibold">
-          <span className="text-accent">{LivestreamIcon}</span>
-          Phát trực tiếp
-        </h1>
-        <span className="w-24" />
-      </header>
+    <div className="relative h-dvh w-full overflow-hidden bg-black">
+      {/* Full-bleed camera preview — the stage itself, not a card in a form. */}
+      <VideoTile stream={stream} active={cameraEnabled} displayName={user?.displayName ?? "Bạn"} mirrored muted fill />
 
-      <main className="flex flex-1 flex-col items-center justify-center gap-8 px-6 py-8">
-        <div className="grid w-full max-w-3xl gap-8 md:grid-cols-2 md:items-center">
-          <div className="flex flex-col gap-3">
-            <VideoTile stream={stream} active={cameraEnabled} displayName={user?.displayName ?? "Bạn"} mirrored muted />
-            {mediaStatus === "error" && (
-              <p className="text-xs text-danger">{mediaError ?? "Không thể truy cập camera/micro"}</p>
+      {/* Top bar: back link + LIVE badge, floating over the video. */}
+      <div className="absolute inset-x-0 top-0 flex items-center justify-between bg-gradient-to-b from-black/70 to-transparent px-4 py-4 sm:px-6">
+        <Link href="/" className="flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white hover:bg-black/60">
+          ←
+        </Link>
+        <span className="flex items-center gap-1.5 text-sm font-semibold text-white/90">
+          <span className="text-accent">{LivestreamIcon}</span>
+          Studio phát trực tiếp
+        </span>
+        {isLive ? (
+          <span className="flex items-center gap-1.5 rounded-full bg-danger px-3 py-1 text-xs font-bold tracking-wide text-white">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" /> LIVE
+          </span>
+        ) : (
+          <span className="w-9" />
+        )}
+      </div>
+
+      {mediaStatus === "error" && (
+        <div className="absolute left-1/2 top-20 -translate-x-1/2 rounded-lg bg-danger/90 px-4 py-2 text-sm text-white">
+          {mediaError ?? "Không thể truy cập camera/micro"}
+        </div>
+      )}
+
+      {/* Bottom overlay: pre-live setup card, or the live control bar. */}
+      <div className="absolute inset-x-0 bottom-0 flex flex-col gap-4 bg-gradient-to-t from-black/85 via-black/50 to-transparent px-4 pb-6 pt-16 sm:px-8 sm:pb-8">
+        {!isLive ? (
+          <div className="mx-auto flex w-full max-w-md flex-col gap-3">
+            <label htmlFor="live-title" className="text-xs font-medium text-white/70">
+              Tiêu đề buổi phát
+            </label>
+            <input
+              id="live-title"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              className="rounded-full border border-white/20 bg-white/10 px-4 py-2.5 text-sm text-white outline-none placeholder:text-white/40 focus:border-accent"
+              placeholder="Đặt tên cho buổi phát của bạn"
+            />
+            {error && <p className="text-center text-sm text-danger">{error}</p>}
+            <button
+              onClick={handleStart}
+              disabled={starting || !stream}
+              className="flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-danger to-accent px-6 py-3 text-sm font-bold text-white shadow-lg transition-opacity hover:opacity-90 disabled:opacity-50"
+            >
+              <span className="h-2 w-2 rounded-full bg-white" />
+              {starting ? "Đang bắt đầu…" : "Bắt đầu phát trực tiếp"}
+            </button>
+          </div>
+        ) : (
+          <div className="mx-auto flex w-full max-w-lg flex-col items-center gap-3">
+            {watchUrl && (
+              <button
+                onClick={handleCopyLink}
+                className="max-w-full truncate rounded-full bg-white/10 px-4 py-1.5 text-xs text-white/80 hover:bg-white/20"
+                title={watchUrl}
+              >
+                {copied ? "Đã sao chép liên kết ✓" : `${watchUrl} · sao chép`}
+              </button>
             )}
-            <div className="flex justify-center gap-3">
-              <MediaToggleButton
-                enabled={micEnabled}
+            {(error || broadcaster.error) && (
+              <p className="text-center text-sm text-danger">{error ?? broadcaster.error}</p>
+            )}
+            <div className="flex items-center gap-4">
+              <button
                 onClick={toggleMic}
-                label={micEnabled ? "Tắt micro" : "Bật micro"}
-                enabledIcon={MicOnIcon}
-                disabledIcon={MicOffIcon}
-              />
-              <MediaToggleButton
-                enabled={cameraEnabled}
+                aria-label={micEnabled ? "Tắt micro" : "Bật micro"}
+                className={`flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
+                  micEnabled ? "bg-white/15 text-white hover:bg-white/25" : "bg-danger text-white"
+                }`}
+              >
+                {micEnabled ? MicOnIcon : MicOffIcon}
+              </button>
+              <button
                 onClick={toggleCamera}
-                label={cameraEnabled ? "Tắt camera" : "Bật camera"}
-                enabledIcon={CameraOnIcon}
-                disabledIcon={CameraOffIcon}
-              />
+                aria-label={cameraEnabled ? "Tắt camera" : "Bật camera"}
+                className={`flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
+                  cameraEnabled ? "bg-white/15 text-white hover:bg-white/25" : "bg-danger text-white"
+                }`}
+              >
+                {cameraEnabled ? CameraOnIcon : CameraOffIcon}
+              </button>
+              <button
+                onClick={() => {
+                  handleStop();
+                  stopLocalMedia();
+                }}
+                aria-label="Dừng phát trực tiếp"
+                title="Dừng phát trực tiếp"
+                className="flex h-14 w-14 items-center justify-center rounded-full bg-danger text-white shadow-lg hover:opacity-90"
+              >
+                {PhoneHangupIcon}
+              </button>
             </div>
           </div>
-
-          <div className="flex flex-col gap-4">
-            {!broadcaster.isBroadcasting ? (
-              <>
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="live-title" className="text-sm font-medium">
-                    Tiêu đề buổi phát
-                  </label>
-                  <input
-                    id="live-title"
-                    value={title}
-                    onChange={(event) => setTitle(event.target.value)}
-                    className="rounded-lg border border-input-border bg-input-bg px-3.5 py-2.5 text-sm outline-none focus:border-accent focus:ring-2 focus:ring-accent/25"
-                  />
-                </div>
-                {(error || broadcaster.error) && <p className="text-sm text-danger">{error ?? broadcaster.error}</p>}
-                <button
-                  onClick={handleStart}
-                  disabled={starting || !stream}
-                  className="rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent-hover disabled:opacity-60"
-                >
-                  {starting ? "Đang bắt đầu…" : "Bắt đầu phát trực tiếp"}
-                </button>
-              </>
-            ) : (
-              <>
-                <div className="flex flex-col gap-1.5">
-                  <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-danger/10 px-2.5 py-1 text-xs font-medium text-danger">
-                    <span className="h-1.5 w-1.5 rounded-full bg-danger" /> ĐANG PHÁT TRỰC TIẾP
-                  </span>
-                  <p className="text-sm text-muted">Chia sẻ liên kết này để mọi người xem:</p>
-                  {watchUrl && (
-                    <a href={watchUrl} target="_blank" rel="noreferrer" className="break-all text-sm font-medium text-accent hover:underline">
-                      {watchUrl}
-                    </a>
-                  )}
-                </div>
-                {(error || broadcaster.error) && <p className="text-sm text-danger">{error ?? broadcaster.error}</p>}
-                <button
-                  onClick={() => {
-                    handleStop();
-                    stopLocalMedia();
-                  }}
-                  className="rounded-lg border border-danger-border bg-danger-bg px-4 py-2.5 text-sm font-medium text-danger transition-colors hover:bg-danger hover:text-white"
-                >
-                  Dừng phát trực tiếp
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </main>
+        )}
+      </div>
     </div>
   );
 }

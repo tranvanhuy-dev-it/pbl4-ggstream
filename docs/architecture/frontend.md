@@ -298,28 +298,39 @@ raw `RTCPeerConnection` calls sprinkled across JSX.
 
 New feature folder `features/livestream/` — không dùng chung code với Mesh
 hay SFU vì đây là một transport hoàn toàn khác (HLS qua HTTP, không phải
-`RTCPeerConnection` nào cả). Chi tiết kiến trúc đầy đủ ở
-[networking/livestream.md](../networking/livestream.md).
+`RTCPeerConnection` nào cả), và **không dùng chung code với `features/meeting/`**
+vì livestream là một tính năng độc lập, không có khái niệm "meeting" nào
+liên quan (xem [networking/livestream.md](../networking/livestream.md)).
+Route vào là `/live` (đi trực tiếp từ mục "Trực tiếp" ở sidebar trang chủ,
+`app/page.tsx`) — không đi qua `CreateJoinMeeting`/lobby/`MeetingRoomView`
+ở bất kỳ bước nào.
 
 - `hooks/useLivestreamBroadcaster.ts` — bọc `MediaRecorder` quanh
   `localStream` hiện tại (camera/mic của người bắt đầu livestream), mở một
-  WebSocket nhị phân tới endpoint ingest, gửi từng `Blob` từ
-  `ondataavailable` (mỗi giây một lần) sang backend. Không tự chọn codec
-  cụ thể — dùng `MediaRecorder.isTypeSupported()` để chọn `video/webm`
-  tốt nhất trình duyệt hỗ trợ, vì backend/FFmpeg mới là nơi chuẩn hóa
-  output thành H.264/AAC, không cần trình duyệt phải tạo đúng định dạng
-  cuối.
-- `components/LivestreamControls.tsx` — nút bật/tắt chỉ hiển thị cho chủ
-  phòng trong `MeetingRoomView`, gọi `POST .../livestream/start` trước rồi
-  mới khởi động `useLivestreamBroadcaster` (thứ tự quan trọng: phải có
-  session đang chạy ở backend thì endpoint ingest mới chấp nhận kết nối
-  WebSocket).
+  WebSocket nhị phân tới endpoint ingest (`/ws/live/{id}/ingest`), gửi
+  từng `Blob` từ `ondataavailable` (mỗi giây một lần) sang backend. Không
+  tự chọn codec cụ thể — dùng `MediaRecorder.isTypeSupported()` để chọn
+  `video/webm` tốt nhất trình duyệt hỗ trợ, vì backend/FFmpeg mới là nơi
+  chuẩn hóa output thành H.264/AAC, không cần trình duyệt phải tạo đúng
+  định dạng cuối.
+- `components/LiveBroadcastView.tsx` (route `app/live/page.tsx`) — màn
+  hình "studio" toàn màn hình (full-bleed camera preview, control nổi ở
+  trên/dưới), cố ý không tái dùng layout lobby/phòng họp để không trông
+  giống một cuộc họp. Gọi `POST /api/v1/live/start` trực tiếp (không tạo
+  gì ở `meetingApi` cả) rồi mới khởi động `useLivestreamBroadcaster` với
+  `id` trả về (thứ tự quan trọng: phải có session đang chạy ở backend thì
+  endpoint ingest mới chấp nhận kết nối WebSocket). Giữ `id` trong một
+  `ref` (không chỉ state) để effect dọn dẹp lúc unmount vẫn gọi `/stop`
+  được ngay cả khi component đã unmount trước khi state kịp cập nhật.
 - `components/LivestreamViewer.tsx` + route `app/watch/[code]/page.tsx` —
-  trang xem công khai, không cần đăng nhập, không xin quyền camera/mic.
-  Poll `GET /meetings/code/{code}/livestream` mỗi 4 giây cho đến khi
-  `status === "LIVE"`, sau đó phát bằng `hls.js` (native `<video>` trên
-  Safari, `Hls.js` ở nơi khác — HLS không được hỗ trợ sẵn ở hầu hết trình
-  duyệt ngoài Safari).
+  trang xem công khai, không cần đăng nhập, không xin quyền camera/mic,
+  không biết gì về `meetingApi`. Poll `GET /api/v1/live/{code}/status`
+  mỗi 4 giây cho đến khi `status === "LIVE"`, sau đó phát bằng `hls.js`
+  (native `<video>` trên Safari, `Hls.js` ở nơi khác — HLS không được hỗ
+  trợ sẵn ở hầu hết trình duyệt ngoài Safari). Vì "code chưa từng tồn tại"
+  và "code đã hết live" trả về giống hệt nhau (`ENDED`, không phải lỗi),
+  UI chỉ có đúng một trạng thái "chưa có ai phát" thay vì phân biệt
+  "không tìm thấy" — nhất quán với cách backend không lưu lịch sử.
 
 ## API client (`lib/api`)
 

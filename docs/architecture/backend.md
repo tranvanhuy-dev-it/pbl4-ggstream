@@ -311,11 +311,16 @@ one place.
 
 ## Livestream (Milestone 12)
 
-New package `com.project.meet.livestream`. Full design/rationale (why
-FFmpeg instead of LiveKit Egress, why the ingest transport is a binary
-WebSocket, why nothing here is persisted) is in
-[networking/livestream.md](../networking/livestream.md) — this section is
-the code-organization summary.
+New package `com.project.meet.livestream` — **deliberately has no
+dependency on the `meeting` package at all**, in either direction.
+Livestream (one broadcaster, many passive viewers, TikTok/YouTube-Live
+style) and meetings (many equal participants in a two-way call) are
+different features; nothing here creates, reads, or references a
+`Meeting`. Full design/rationale (why FFmpeg instead of LiveKit Egress,
+why the ingest transport is a binary WebSocket, why nothing here is
+persisted, why the public status endpoint never leaks the control id) is
+in [networking/livestream.md](../networking/livestream.md) — this section
+is the code-organization summary.
 
 - `application/LivestreamProcessLauncher` is the seam between "start a
   livestream" and "actually spawn a transcoder process" —
@@ -325,24 +330,31 @@ the code-organization summary.
   it, the same reasoning `LiveKitMediaServerTest` uses to avoid needing a
   live LiveKit server.
 - `application/LivestreamSession` / `LivestreamRegistry` are in-memory
-  only (`Map<UUID, LivestreamSession>`), same shape as `MeetingRuntime` for
-  signaling presence — a livestream has no value once it ends (no VOD in
-  this milestone), so it never touches PostgreSQL.
+  only, same shape as `MeetingRuntime` for signaling presence — a
+  livestream has no value once it ends (no VOD in this milestone), so it
+  never touches PostgreSQL. Each session carries its own `id` (the
+  broadcaster's private credential for stop/ingest) and `code` (the public
+  `/watch/{code}` identifier) — both generated fresh by
+  `LivestreamCodeGenerator` at start time, `LivestreamRegistry` indexes by
+  both so the two lookup paths (owner vs. anonymous viewer) stay separate.
 - `infrastructure/LivestreamIngestWebSocketHandler extends BinaryWebSocketHandler`
   is the one-directional (client → server) counterpart to
-  `SignalingWebSocketHandler` — it reuses `SignalingHandshakeInterceptor`
-  as-is for the same JWT-via-query-param handshake, then writes every
-  binary frame straight to that meeting's FFmpeg process's stdin.
-  Registered in `WebSocketConfig` alongside the signaling handler.
+  `SignalingWebSocketHandler`, but authenticated by its own
+  `LivestreamHandshakeInterceptor` — deliberately **not** a reuse of
+  `SignalingHandshakeInterceptor`, since that one looks up a `Meeting` at
+  handshake time and a livestream has none. The livestream interceptor
+  only verifies the JWT and extracts the path's `id`; whether that `id`
+  is actually live, and owned by the connecting user, is checked
+  afterward in the handler itself. Registered in `WebSocketConfig`
+  alongside (but independently of) the signaling handler.
 - HLS output (`.m3u8`/`.ts`) is served as plain static files —
   `WebConfig.addResourceHandlers` maps `/livestreams/**` to the configured
   output directory on disk, no custom controller needed for that part.
-- `GetLivestreamStatusUseCase` and the `/livestreams/**` static mapping are
-  the only `permitAll()` additions to `SecurityConfig` beyond what already
-  existed — a livestream viewer is never authenticated, matching a normal
-  livestream's "anyone with the link can watch" semantics, unlike joining
-  a meeting.
-- `meetings.media_mode`'s nullable-at-the-DB-level pattern (see
-  [database/schema.md](../database/schema.md)) didn't recur here — there's
-  no new `meetings` column at all, since livestream state is entirely
-  runtime/in-memory.
+- `GET /api/v1/live/{code}/status` and the `/livestreams/**` static
+  mapping are the `permitAll()` additions to `SecurityConfig` for this
+  feature — a livestream viewer is never authenticated at all, matching a
+  normal livestream's "anyone with the link can watch" semantics.
+- No new database column or table anywhere — livestream state is entirely
+  runtime/in-memory, so it never had the kind of nullable-DB-column
+  migration concern `meetings.media_mode` did (see
+  [database/schema.md](../database/schema.md)).

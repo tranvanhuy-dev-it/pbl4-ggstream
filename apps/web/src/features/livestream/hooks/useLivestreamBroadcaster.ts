@@ -23,9 +23,9 @@ export function useLivestreamBroadcaster() {
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const start = useCallback((meetingId: string, token: string, stream: MediaStream) => {
+  const start = useCallback((livestreamId: string, token: string, stream: MediaStream) => {
     setError(null);
-    const socket = new WebSocket(livestreamIngestUrl(meetingId, token));
+    const socket = new WebSocket(livestreamIngestUrl(livestreamId, token));
     socket.binaryType = "arraybuffer";
     socketRef.current = socket;
 

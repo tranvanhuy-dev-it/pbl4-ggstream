@@ -32,7 +32,6 @@ import { ChatPanel } from "@/features/chat/components/ChatPanel";
 import { MeetingTopbar } from "@/features/meeting/components/MeetingTopbar";
 import { ScreenShareBanner } from "@/features/meeting/components/ScreenShareBanner";
 import { NetworkDiagnosticsPanel } from "@/features/meeting/components/NetworkDiagnosticsPanel";
-import { LivestreamControls } from "@/features/livestream/components/LivestreamControls";
 import { useWebRtcStats } from "@/features/meeting/hooks/useWebRtcStats";
 import * as chatApi from "@/features/chat/api/chatApi";
 import type { ChatMessage } from "@/features/chat/api/chatApi";
@@ -621,9 +620,6 @@ export function MeetingRoomView({ code }: { code: string }) {
             enabledIcon={NetworkStatsIcon}
             disabledIcon={NetworkStatsIcon}
           />
-          {isHost && token && (
-            <LivestreamControls meetingId={meeting.id} code={meeting.code} token={token} localStream={stream} />
-          )}
           <button
             onClick={handleLeave}
             disabled={leaving}

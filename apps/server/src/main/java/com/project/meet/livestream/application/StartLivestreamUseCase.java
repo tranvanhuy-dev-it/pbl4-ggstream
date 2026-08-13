@@ -1,13 +1,7 @@
 package com.project.meet.livestream.application;
 
 import com.project.meet.common.config.LivestreamProperties;
-import com.project.meet.common.exception.ResourceNotFoundException;
 import com.project.meet.livestream.api.LivestreamStatusResponse;
-import com.project.meet.livestream.domain.LivestreamAlreadyLiveException;
-import com.project.meet.meeting.domain.Meeting;
-import com.project.meet.meeting.domain.MeetingEndedException;
-import com.project.meet.meeting.domain.NotMeetingHostException;
-import com.project.meet.meeting.infrastructure.MeetingRepository;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -16,45 +10,37 @@ import java.nio.file.Path;
 import java.util.UUID;
 
 /**
- * Host-only — starts an FFmpeg process that will transcode whatever the
- * broadcaster streams to the ingest WebSocket into HLS. This only spawns
- * the process and registers the session; the actual media bytes arrive
- * later over {@code LivestreamIngestWebSocketHandler}, not here.
+ * Starts an independent livestream — no meeting involved, see
+ * docs/networking/livestream.md. Spawns an FFmpeg process and registers
+ * the session; the actual media bytes arrive later over
+ * {@code LivestreamIngestWebSocketHandler}, not here.
  */
 @Component
 public class StartLivestreamUseCase {
 
-	private final MeetingRepository meetingRepository;
 	private final LivestreamRegistry registry;
 	private final LivestreamProcessLauncher processLauncher;
 	private final LivestreamProperties properties;
+	private final LivestreamCodeGenerator codeGenerator;
 
 	public StartLivestreamUseCase(
-			MeetingRepository meetingRepository,
 			LivestreamRegistry registry,
 			LivestreamProcessLauncher processLauncher,
-			LivestreamProperties properties
+			LivestreamProperties properties,
+			LivestreamCodeGenerator codeGenerator
 	) {
-		this.meetingRepository = meetingRepository;
 		this.registry = registry;
 		this.processLauncher = processLauncher;
 		this.properties = properties;
+		this.codeGenerator = codeGenerator;
 	}
 
-	public LivestreamStatusResponse execute(UUID meetingId, UUID requesterUserId) {
-		Meeting meeting = meetingRepository.findById(meetingId)
-				.orElseThrow(() -> new ResourceNotFoundException("MEETING_NOT_FOUND", "Không tìm thấy cuộc họp"));
-		if (!meeting.isHostedBy(requesterUserId)) {
-			throw new NotMeetingHostException();
-		}
-		if (meeting.isEnded()) {
-			throw new MeetingEndedException();
-		}
-		if (registry.get(meetingId) != null) {
-			throw new LivestreamAlreadyLiveException();
-		}
+	public LivestreamStatusResponse execute(UUID hostUserId, String title) {
+		UUID id = UUID.randomUUID();
+		String code = generateUniqueCode();
+		String resolvedTitle = (title == null || title.isBlank()) ? "Livestream" : title.trim();
 
-		Path playlistPath = Path.of(properties.outputDir(), meetingId.toString(), "stream.m3u8");
+		Path playlistPath = Path.of(properties.outputDir(), id.toString(), "stream.m3u8");
 		try {
 			Files.createDirectories(playlistPath.getParent());
 		} catch (IOException ex) {
@@ -63,13 +49,21 @@ public class StartLivestreamUseCase {
 
 		LivestreamProcessHandle process;
 		try {
-			process = processLauncher.launch(meetingId, playlistPath);
+			process = processLauncher.launch(id, playlistPath);
 		} catch (IOException ex) {
 			throw new IllegalStateException("Không thể khởi động tiến trình FFmpeg", ex);
 		}
 
-		String hlsUrl = "/livestreams/" + meetingId + "/stream.m3u8";
-		registry.put(meetingId, new LivestreamSession(meetingId, requesterUserId, hlsUrl, process));
-		return LivestreamStatusResponse.live(hlsUrl);
+		String hlsUrl = "/livestreams/" + id + "/stream.m3u8";
+		registry.put(new LivestreamSession(id, code, hostUserId, resolvedTitle, hlsUrl, process));
+		return LivestreamStatusResponse.started(id.toString(), code, resolvedTitle, hlsUrl);
+	}
+
+	private String generateUniqueCode() {
+		String code;
+		do {
+			code = codeGenerator.generate();
+		} while (registry.codeInUse(code));
+		return code;
 	}
 }

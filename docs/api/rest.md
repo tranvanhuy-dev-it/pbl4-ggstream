@@ -119,24 +119,44 @@ aren't set. Unlike TURN credentials (which degrade gracefully to STUN-only),
 there's no fallback for a missing SFU — an `SFU`-mode meeting has no other
 transport to fall back to, so this fails loudly instead of silently.
 
-### `POST /api/v1/meetings/{meetingId}/livestream/start` / `.../stop`
+### `POST /api/v1/live/start`
 
-Host-only (`403 NOT_MEETING_HOST` otherwise) — see
-[networking/livestream.md](../networking/livestream.md). `start` spawns an
-FFmpeg process and returns `{ "status": "LIVE", "hlsUrl": "/livestreams/{id}/stream.m3u8" }`;
-`409 LIVESTREAM_ALREADY_LIVE` if one is already running for this meeting.
-`stop` returns `204`; `404 LIVESTREAM_NOT_LIVE` if nothing is currently
-live. Actually pushing media happens over the ingest WebSocket
-(`/ws/meetings/{meetingId}/livestream-ingest`, binary frames, JWT via
+Requires `Authorization: Bearer <accessToken>`. **No meeting involved at
+all** — livestream is its own top-level feature, see
+[networking/livestream.md](../networking/livestream.md). Body:
+`{ "title"? }`, defaults to `"Livestream"` if omitted/blank. Spawns an
+FFmpeg process and returns:
+
+```json
+{
+  "id": "b3f1...",
+  "code": "abc-defg-hij",
+  "title": "Buổi phát của tôi",
+  "status": "LIVE",
+  "hlsUrl": "/livestreams/b3f1.../stream.m3u8"
+}
+```
+
+`id` is the caller's own credential for `stop`/the ingest WebSocket — see
+below, it's never exposed to anyone else. Actually pushing media happens
+over the ingest WebSocket (`/ws/live/{id}/ingest`, binary frames, JWT via
 `?token=` like signaling), not REST.
 
-### `GET /api/v1/meetings/{meetingId}/livestream` / `GET /api/v1/meetings/code/{code}/livestream`
+### `POST /api/v1/live/{id}/stop`
 
-**Public — no auth.** A livestream viewer isn't a meeting participant, so
-this deliberately returns only `{ status, hlsUrl }` (`hlsUrl` is `null`
-when `status` is `"ENDED"`) — never the meeting's title or host. The
-by-code variant backs the `/watch/{code}` viewer page, which only ever
-knows the join code, not the meeting's UUID.
+Requires `Authorization: Bearer <accessToken>` **and** being the same user
+who called `/start` (`403 NOT_LIVESTREAM_OWNER` otherwise, `404
+LIVESTREAM_NOT_LIVE` if `id` isn't a currently-live session). Returns `204`.
+
+### `GET /api/v1/live/{code}/status`
+
+**Public — no auth.** Backs the `/watch/{code}` viewer page. Returns the
+same shape as `/start`'s response but with `id: null` — the public,
+by-code lookup never exposes the control id needed to stop someone else's
+stream. An unknown or already-ended `code` returns `200` with
+`status: "ENDED"`, not a `404` — see
+[networking/livestream.md](../networking/livestream.md#vì-sao-trạng-thái-livestream-không-lưu-db)
+for why the two cases are indistinguishable by design.
 
 ## Authentication
 

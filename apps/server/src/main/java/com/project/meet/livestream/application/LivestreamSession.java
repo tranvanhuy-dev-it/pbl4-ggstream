@@ -6,21 +6,31 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * One meeting's active livestream — in-memory only, like {@code MeetingRuntime}
+ * One independent livestream — in-memory only, like {@code MeetingRuntime}
  * for signaling presence (see docs/database/schema.md#what-is-not-persisted):
  * it has no value once the stream ends, so it never touches PostgreSQL.
+ *
+ * Deliberately has no relationship to {@code Meeting} — a livestream is its
+ * own feature (a broadcaster going live, like TikTok/YouTube Live), not a
+ * side effect of a meeting existing. {@code id} identifies it for the
+ * broadcaster's own start/stop calls; {@code code} is the short public
+ * identifier viewers use (see docs/networking/livestream.md).
  */
 public class LivestreamSession {
 
-	private final UUID meetingId;
+	private final UUID id;
+	private final String code;
 	private final UUID hostUserId;
+	private final String title;
 	private final String hlsUrl;
 	private final LivestreamProcessHandle process;
 	private final Instant startedAt = Instant.now();
 
-	public LivestreamSession(UUID meetingId, UUID hostUserId, String hlsUrl, LivestreamProcessHandle process) {
-		this.meetingId = meetingId;
+	public LivestreamSession(UUID id, String code, UUID hostUserId, String title, String hlsUrl, LivestreamProcessHandle process) {
+		this.id = id;
+		this.code = code;
 		this.hostUserId = hostUserId;
+		this.title = title;
 		this.hlsUrl = hlsUrl;
 		this.process = process;
 	}
@@ -43,8 +53,16 @@ public class LivestreamSession {
 		process.stop();
 	}
 
-	public UUID getMeetingId() {
-		return meetingId;
+	public UUID getId() {
+		return id;
+	}
+
+	public String getCode() {
+		return code;
+	}
+
+	public String getTitle() {
+		return title;
 	}
 
 	public UUID getHostUserId() {

@@ -1,76 +1,52 @@
 package com.project.meet.livestream.application;
 
 import com.project.meet.livestream.domain.LivestreamNotLiveException;
-import com.project.meet.meeting.domain.Meeting;
-import com.project.meet.meeting.domain.MeetingAccessType;
-import com.project.meet.meeting.domain.NotMeetingHostException;
-import com.project.meet.meeting.infrastructure.MeetingRepository;
-import com.project.meet.user.domain.User;
+import com.project.meet.livestream.domain.NotLivestreamOwnerException;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.lang.reflect.Field;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
 class StopLivestreamUseCaseTest {
 
-	@Mock
-	private MeetingRepository meetingRepository;
-
 	private final LivestreamRegistry registry = new LivestreamRegistry();
+	private final StopLivestreamUseCase useCase = new StopLivestreamUseCase(registry);
 
-	private StopLivestreamUseCase newUseCase() {
-		return new StopLivestreamUseCase(meetingRepository, registry);
-	}
-
-	private Meeting meetingHostedBy(UUID hostId) throws Exception {
-		User host = new User("host@example.com", "hash", "Host");
-		Field field = User.class.getDeclaredField("id");
-		field.setAccessible(true);
-		field.set(host, hostId);
-		return new Meeting("abc-defg-hij", "Đại hội đồng", host, MeetingAccessType.PUBLIC);
-	}
-
-	@Test
-	void hostCanStopAnActiveLivestream() throws Exception {
-		UUID meetingId = UUID.randomUUID();
-		UUID hostId = UUID.randomUUID();
-		when(meetingRepository.findById(meetingId)).thenReturn(Optional.of(meetingHostedBy(hostId)));
+	private LivestreamSession register(UUID id, UUID hostId) {
 		FakeLivestreamProcessLauncher launcher = new FakeLivestreamProcessLauncher();
-		LivestreamProcessHandle handle = launcher.launch(meetingId, null);
-		registry.put(meetingId, new LivestreamSession(meetingId, hostId, "/livestreams/x/stream.m3u8", handle));
-
-		newUseCase().execute(meetingId, hostId);
-
-		assertThat(registry.get(meetingId)).isNull();
-		assertThat(launcher.wasStopped(meetingId)).isTrue();
+		LivestreamProcessHandle handle = launcher.launch(id, null);
+		LivestreamSession session = new LivestreamSession(id, "abc-defg-hij", hostId, "Title", "/livestreams/x/stream.m3u8", handle);
+		registry.put(session);
+		return session;
 	}
 
 	@Test
-	void nonHostCannotStopALivestream() throws Exception {
-		UUID meetingId = UUID.randomUUID();
+	void ownerCanStopAnActiveLivestream() {
+		UUID id = UUID.randomUUID();
 		UUID hostId = UUID.randomUUID();
-		when(meetingRepository.findById(meetingId)).thenReturn(Optional.of(meetingHostedBy(hostId)));
+		register(id, hostId);
 
-		assertThatThrownBy(() -> newUseCase().execute(meetingId, UUID.randomUUID()))
-				.isInstanceOf(NotMeetingHostException.class);
+		useCase.execute(id, hostId);
+
+		assertThat(registry.get(id)).isNull();
 	}
 
 	@Test
-	void stoppingWhenNothingIsLiveIs404() throws Exception {
-		UUID meetingId = UUID.randomUUID();
+	void nonOwnerCannotStopSomeoneElsesLivestream() {
+		UUID id = UUID.randomUUID();
 		UUID hostId = UUID.randomUUID();
-		when(meetingRepository.findById(meetingId)).thenReturn(Optional.of(meetingHostedBy(hostId)));
+		register(id, hostId);
 
-		assertThatThrownBy(() -> newUseCase().execute(meetingId, hostId))
+		assertThatThrownBy(() -> useCase.execute(id, UUID.randomUUID()))
+				.isInstanceOf(NotLivestreamOwnerException.class);
+		assertThat(registry.get(id)).as("a rejected stop must not remove the session").isNotNull();
+	}
+
+	@Test
+	void stoppingAnUnknownIdIs404() {
+		assertThatThrownBy(() -> useCase.execute(UUID.randomUUID(), UUID.randomUUID()))
 				.isInstanceOf(LivestreamNotLiveException.class);
 	}
 }

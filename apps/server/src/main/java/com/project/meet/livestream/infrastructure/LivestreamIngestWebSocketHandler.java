@@ -3,7 +3,6 @@ package com.project.meet.livestream.infrastructure;
 import com.project.meet.common.security.AuthenticatedUser;
 import com.project.meet.livestream.application.LivestreamRegistry;
 import com.project.meet.livestream.application.LivestreamSession;
-import com.project.meet.signaling.infrastructure.SignalingHandshakeInterceptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.socket.BinaryMessage;
@@ -15,12 +14,10 @@ import java.io.IOException;
 import java.util.UUID;
 
 /**
- * Ingest endpoint for the browser's MediaRecorder chunks — the counterpart
- * to SignalingWebSocketHandler, but one-directional (client → server only)
- * and carrying binary frames instead of JSON envelopes. Reuses
- * SignalingHandshakeInterceptor for auth (same JWT-via-query-param
- * handshake, same meetingId path-variable extraction) since the
- * requirements are identical.
+ * Ingest endpoint for the browser's MediaRecorder chunks — one-directional
+ * (client → server only), carrying binary frames instead of JSON
+ * envelopes. Auth is handled by {@link LivestreamHandshakeInterceptor}
+ * (JWT via query param, no meeting involved).
  */
 public class LivestreamIngestWebSocketHandler extends BinaryWebSocketHandler {
 
@@ -35,16 +32,14 @@ public class LivestreamIngestWebSocketHandler extends BinaryWebSocketHandler {
 
 	@Override
 	public void afterConnectionEstablished(WebSocketSession session) throws IOException {
-		UUID meetingId = (UUID) session.getAttributes().get(SignalingHandshakeInterceptor.ATTR_MEETING_ID);
-		AuthenticatedUser user = (AuthenticatedUser) session.getAttributes().get(SignalingHandshakeInterceptor.ATTR_USER);
-		LivestreamSession live = registry.get(meetingId);
+		UUID livestreamId = (UUID) session.getAttributes().get(LivestreamHandshakeInterceptor.ATTR_LIVESTREAM_ID);
+		AuthenticatedUser user = (AuthenticatedUser) session.getAttributes().get(LivestreamHandshakeInterceptor.ATTR_USER);
+		LivestreamSession live = registry.get(livestreamId);
 
-		// Only the host who called POST .../livestream/start may push
-		// bytes into that session's FFmpeg process — a livestream must
-		// already exist (created by that call) before any ingest
-		// connection is accepted at all.
+		// Only the user who called POST /live/start (and got this id back)
+		// may push bytes into that session's FFmpeg process.
 		if (live == null || !live.getHostUserId().equals(user.userId())) {
-			session.close(CloseStatus.NOT_ACCEPTABLE.withReason("No active livestream for this meeting"));
+			session.close(CloseStatus.NOT_ACCEPTABLE.withReason("No active livestream with this id"));
 			return;
 		}
 		session.getAttributes().put(ATTR_LIVE_SESSION, live);
@@ -62,7 +57,7 @@ public class LivestreamIngestWebSocketHandler extends BinaryWebSocketHandler {
 			// FFmpeg's stdin pipe closed/broke (e.g. the process exited) —
 			// nothing more this connection can do; the broadcaster will
 			// notice the socket close on its own.
-			log.warn("Failed to write livestream chunk for meeting {}: {}", live.getMeetingId(), ex.getMessage());
+			log.warn("Failed to write livestream chunk for {}: {}", live.getId(), ex.getMessage());
 		}
 	}
 }

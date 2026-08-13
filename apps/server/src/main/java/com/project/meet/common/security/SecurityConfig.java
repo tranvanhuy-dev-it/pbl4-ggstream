@@ -49,11 +49,11 @@ public class SecurityConfig {
 						// so this can't go through the same JwtAuthenticationFilter path.
 						.requestMatchers("/ws/**").permitAll()
 						// HLS output and livestream status are watched by
-						// viewers who aren't meeting participants at all —
-						// there's nothing to authenticate them against.
+						// anonymous viewers — livestream is independent of
+						// meetings/accounts, there's nothing to authenticate
+						// a viewer against.
 						.requestMatchers(HttpMethod.GET, "/livestreams/**").permitAll()
-						.requestMatchers(HttpMethod.GET, "/api/v1/meetings/*/livestream").permitAll()
-						.requestMatchers(HttpMethod.GET, "/api/v1/meetings/code/*/livestream").permitAll()
+						.requestMatchers(HttpMethod.GET, "/api/v1/live/*/status").permitAll()
 						.anyRequest().authenticated()
 				)
 				.exceptionHandling(handling -> handling
