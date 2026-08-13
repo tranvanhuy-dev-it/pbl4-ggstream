@@ -159,6 +159,7 @@ next starts:
 - [Backend architecture](docs/architecture/backend.md)
 - [Frontend architecture](docs/architecture/frontend.md)
 - [Scalability plan (100 người/họp, 100 họp đồng thời, livestream 10×100)](docs/architecture/scalability-plan.md)
+- [Thiết kế hạ tầng mạng (cơ chế, nơi dùng, lý do, cách dùng của từng thành phần)](docs/architecture/network-infrastructure-design.md)
 - [Database schema](docs/database/schema.md)
 - [REST API](docs/api/rest.md)
 - [WebSocket signaling protocol](docs/api/websocket-protocol.md)

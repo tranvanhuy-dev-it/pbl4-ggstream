@@ -370,6 +370,7 @@ phù hợp phòng nhỏ và SFU là hướng mở rộng cho phòng đông.
 
 ## Tài liệu liên quan
 
+- [Thiết kế hạ tầng mạng](../architecture/network-infrastructure-design.md) — cơ chế, nơi dùng, lý do, cách dùng của từng thành phần hạ tầng
 - [WebRTC](./webrtc.md)
 - [ICE, STUN, TURN và NAT traversal](./ice-stun-turn.md)
 - [WebSocket signaling](./signaling.md)
