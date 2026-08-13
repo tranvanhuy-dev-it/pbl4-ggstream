@@ -158,6 +158,7 @@ next starts:
 - [Architecture overview](docs/architecture/overview.md)
 - [Backend architecture](docs/architecture/backend.md)
 - [Frontend architecture](docs/architecture/frontend.md)
+- [Scalability plan (100 người/họp, 100 họp đồng thời, livestream 10×100)](docs/architecture/scalability-plan.md)
 - [Database schema](docs/database/schema.md)
 - [REST API](docs/api/rest.md)
 - [WebSocket signaling protocol](docs/api/websocket-protocol.md)
