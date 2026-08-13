@@ -26,6 +26,11 @@ HELP.md
 .project
 .settings/
 
+# --- Livestream (Milestone 12) ---
+# Transient HLS output (.m3u8/.ts) — regenerated every time a livestream
+# runs, never worth committing.
+apps/server/livestream-output/
+
 # --- SFU (services/sfu) ---
 # livekit-server.exe is downloaded locally (docs/networking/sfu-setup.md),
 # not committed; livekit.yaml holds a real API key/secret pair, only the

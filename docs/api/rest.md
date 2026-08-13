@@ -119,11 +119,31 @@ aren't set. Unlike TURN credentials (which degrade gracefully to STUN-only),
 there's no fallback for a missing SFU — an `SFU`-mode meeting has no other
 transport to fall back to, so this fails loudly instead of silently.
 
+### `POST /api/v1/meetings/{meetingId}/livestream/start` / `.../stop`
+
+Host-only (`403 NOT_MEETING_HOST` otherwise) — see
+[networking/livestream.md](../networking/livestream.md). `start` spawns an
+FFmpeg process and returns `{ "status": "LIVE", "hlsUrl": "/livestreams/{id}/stream.m3u8" }`;
+`409 LIVESTREAM_ALREADY_LIVE` if one is already running for this meeting.
+`stop` returns `204`; `404 LIVESTREAM_NOT_LIVE` if nothing is currently
+live. Actually pushing media happens over the ingest WebSocket
+(`/ws/meetings/{meetingId}/livestream-ingest`, binary frames, JWT via
+`?token=` like signaling), not REST.
+
+### `GET /api/v1/meetings/{meetingId}/livestream` / `GET /api/v1/meetings/code/{code}/livestream`
+
+**Public — no auth.** A livestream viewer isn't a meeting participant, so
+this deliberately returns only `{ status, hlsUrl }` (`hlsUrl` is `null`
+when `status` is `"ENDED"`) — never the meeting's title or host. The
+by-code variant backs the `/watch/{code}` viewer page, which only ever
+knows the join code, not the meeting's UUID.
+
 ## Authentication
 
-Every route except `/actuator/health` and `/api/v1/auth/**` requires a
-Bearer JWT (`Authorization: Bearer <token>`), verified by
-`JwtAuthenticationFilter` — see
+Every route except `/actuator/health`, `/api/v1/auth/**`, and the public
+livestream-viewing routes above requires a Bearer JWT
+(`Authorization: Bearer <token>`), verified by `JwtAuthenticationFilter` —
+see
 [architecture/backend.md](../architecture/backend.md#authentication-milestone-1).
 Missing/invalid tokens on a protected route get `401 UNAUTHENTICATED`;
 authenticated-but-forbidden gets `403 ACCESS_DENIED` — both in the same

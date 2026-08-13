@@ -30,6 +30,9 @@ app:
     url: ws://localhost:7880
     api-key: test-livekit-key
     api-secret: test-livekit-secret-not-for-production
+  livestream:
+    ffmpeg-path: ffmpeg
+    output-dir: ./target/test-livestream-output
 
 # NOTE: this file fully replaces src/main/resources/application.yml on the
 # test classpath (Spring Boot loads the first "application.yml" it finds —

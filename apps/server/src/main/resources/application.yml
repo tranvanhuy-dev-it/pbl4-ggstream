@@ -44,6 +44,9 @@ app:
     url: ${LIVEKIT_URL:}
     api-key: ${LIVEKIT_API_KEY:}
     api-secret: ${LIVEKIT_API_SECRET:}
+  livestream:
+    ffmpeg-path: ${LIVESTREAM_FFMPEG_PATH:ffmpeg}
+    output-dir: ${LIVESTREAM_OUTPUT_DIR:./livestream-output}
 
 management:
   endpoints:

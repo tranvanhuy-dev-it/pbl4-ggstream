@@ -294,6 +294,33 @@ route-level re-renders and be independently testable. They live in
 (`useLocalMedia`, `useMeeting`, ...) that feature components consume — never
 raw `RTCPeerConnection` calls sprinkled across JSX.
 
+## Livestream (Milestone 12)
+
+New feature folder `features/livestream/` — không dùng chung code với Mesh
+hay SFU vì đây là một transport hoàn toàn khác (HLS qua HTTP, không phải
+`RTCPeerConnection` nào cả). Chi tiết kiến trúc đầy đủ ở
+[networking/livestream.md](../networking/livestream.md).
+
+- `hooks/useLivestreamBroadcaster.ts` — bọc `MediaRecorder` quanh
+  `localStream` hiện tại (camera/mic của người bắt đầu livestream), mở một
+  WebSocket nhị phân tới endpoint ingest, gửi từng `Blob` từ
+  `ondataavailable` (mỗi giây một lần) sang backend. Không tự chọn codec
+  cụ thể — dùng `MediaRecorder.isTypeSupported()` để chọn `video/webm`
+  tốt nhất trình duyệt hỗ trợ, vì backend/FFmpeg mới là nơi chuẩn hóa
+  output thành H.264/AAC, không cần trình duyệt phải tạo đúng định dạng
+  cuối.
+- `components/LivestreamControls.tsx` — nút bật/tắt chỉ hiển thị cho chủ
+  phòng trong `MeetingRoomView`, gọi `POST .../livestream/start` trước rồi
+  mới khởi động `useLivestreamBroadcaster` (thứ tự quan trọng: phải có
+  session đang chạy ở backend thì endpoint ingest mới chấp nhận kết nối
+  WebSocket).
+- `components/LivestreamViewer.tsx` + route `app/watch/[code]/page.tsx` —
+  trang xem công khai, không cần đăng nhập, không xin quyền camera/mic.
+  Poll `GET /meetings/code/{code}/livestream` mỗi 4 giây cho đến khi
+  `status === "LIVE"`, sau đó phát bằng `hls.js` (native `<video>` trên
+  Safari, `Hls.js` ở nơi khác — HLS không được hỗ trợ sẵn ở hầu hết trình
+  duyệt ngoài Safari).
+
 ## API client (`lib/api`)
 
 `lib/api/client.ts` exports `apiFetch<T>(path, init)`: a thin wrapper around

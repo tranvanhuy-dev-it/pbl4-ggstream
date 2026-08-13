@@ -162,4 +162,4 @@ next starts:
 - [REST API](docs/api/rest.md)
 - [WebSocket signaling protocol](docs/api/websocket-protocol.md)
 - [Networking theory used in GGStream](docs/networking/network-theory-in-ggstream.md)
-- [Networking: WebRTC](docs/networking/webrtc.md), [signaling](docs/networking/signaling.md), [ICE/STUN/TURN](docs/networking/ice-stun-turn.md), [connection flow](docs/networking/connection-flow.md), [TURN setup](docs/networking/turn-setup.md), [SFU (LiveKit) setup](docs/networking/sfu-setup.md)
+- [Networking: WebRTC](docs/networking/webrtc.md), [signaling](docs/networking/signaling.md), [ICE/STUN/TURN](docs/networking/ice-stun-turn.md), [connection flow](docs/networking/connection-flow.md), [TURN setup](docs/networking/turn-setup.md), [SFU (LiveKit) setup](docs/networking/sfu-setup.md), [Livestream](docs/networking/livestream.md), [Livestream (FFmpeg) setup](docs/networking/livestream-setup.md)

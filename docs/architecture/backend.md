@@ -308,3 +308,41 @@ Both executors added by this (`RoomCommandDispatcher`'s existing
 virtual-thread-per-task pool, plus the new scheduling thread) are shut down
 together in the same `@PreDestroy` method, keeping lifecycle ownership in
 one place.
+
+## Livestream (Milestone 12)
+
+New package `com.project.meet.livestream`. Full design/rationale (why
+FFmpeg instead of LiveKit Egress, why the ingest transport is a binary
+WebSocket, why nothing here is persisted) is in
+[networking/livestream.md](../networking/livestream.md) — this section is
+the code-organization summary.
+
+- `application/LivestreamProcessLauncher` is the seam between "start a
+  livestream" and "actually spawn a transcoder process" —
+  `infrastructure/FfmpegProcessLauncher` is the real `ProcessBuilder`-based
+  implementation; tests substitute a fake (`FakeLivestreamProcessLauncher`)
+  so the suite never needs a real `ffmpeg` binary on the machine running
+  it, the same reasoning `LiveKitMediaServerTest` uses to avoid needing a
+  live LiveKit server.
+- `application/LivestreamSession` / `LivestreamRegistry` are in-memory
+  only (`Map<UUID, LivestreamSession>`), same shape as `MeetingRuntime` for
+  signaling presence — a livestream has no value once it ends (no VOD in
+  this milestone), so it never touches PostgreSQL.
+- `infrastructure/LivestreamIngestWebSocketHandler extends BinaryWebSocketHandler`
+  is the one-directional (client → server) counterpart to
+  `SignalingWebSocketHandler` — it reuses `SignalingHandshakeInterceptor`
+  as-is for the same JWT-via-query-param handshake, then writes every
+  binary frame straight to that meeting's FFmpeg process's stdin.
+  Registered in `WebSocketConfig` alongside the signaling handler.
+- HLS output (`.m3u8`/`.ts`) is served as plain static files —
+  `WebConfig.addResourceHandlers` maps `/livestreams/**` to the configured
+  output directory on disk, no custom controller needed for that part.
+- `GetLivestreamStatusUseCase` and the `/livestreams/**` static mapping are
+  the only `permitAll()` additions to `SecurityConfig` beyond what already
+  existed — a livestream viewer is never authenticated, matching a normal
+  livestream's "anyone with the link can watch" semantics, unlike joining
+  a meeting.
+- `meetings.media_mode`'s nullable-at-the-DB-level pattern (see
+  [database/schema.md](../database/schema.md)) didn't recur here — there's
+  no new `meetings` column at all, since livestream state is entirely
+  runtime/in-memory.
