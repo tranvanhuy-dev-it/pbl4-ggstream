@@ -2,8 +2,10 @@ package com.project.meet.signaling.infrastructure;
 
 import com.project.meet.chat.api.ChatMessageResponse;
 import com.project.meet.chat.application.SendChatMessageUseCase;
+import com.project.meet.common.config.MeshProperties;
 import com.project.meet.common.config.WebSocketProperties;
 import com.project.meet.common.security.AuthenticatedUser;
+import com.project.meet.meeting.domain.MediaMode;
 import com.project.meet.meeting.domain.Meeting;
 import com.project.meet.meeting.domain.MeetingAccessType;
 import com.project.meet.meeting.infrastructure.MeetingRepository;
@@ -42,6 +44,7 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
 	private final SendChatMessageUseCase sendChatMessageUseCase;
 	private final ObjectMapper objectMapper;
 	private final WebSocketProperties properties;
+	private final MeshProperties meshProperties;
 
 	public SignalingWebSocketHandler(
 			MeetingRuntimeRegistry runtimeRegistry,
@@ -50,7 +53,8 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
 			UserRepository userRepository,
 			SendChatMessageUseCase sendChatMessageUseCase,
 			ObjectMapper objectMapper,
-			WebSocketProperties properties
+			WebSocketProperties properties,
+			MeshProperties meshProperties
 	) {
 		this.runtimeRegistry = runtimeRegistry;
 		this.dispatcher = dispatcher;
@@ -59,6 +63,7 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
 		this.sendChatMessageUseCase = sendChatMessageUseCase;
 		this.objectMapper = objectMapper;
 		this.properties = properties;
+		this.meshProperties = meshProperties;
 	}
 
 	@Override
@@ -158,6 +163,18 @@ public class SignalingWebSocketHandler extends TextWebSocketHandler {
 			runtime.addWaiting(session.getId(), waiting);
 			send(session, SignalingEnvelope.broadcast(SignalingMessageType.PARTICIPANT_WAITING, meetingId, user.userId(), waitingPayload(waiting)));
 			sendToHosts(runtime, SignalingEnvelope.broadcast(SignalingMessageType.PARTICIPANT_WAITING, meetingId, user.userId(), waitingPayload(waiting)));
+			return;
+		}
+
+		// Mesh doesn't scale past a small room — every participant opens one
+		// RTCPeerConnection per other participant (see
+		// docs/architecture/scalability-plan.md). SFU-mode meetings have no
+		// such limit here; LiveKit handles its own capacity separately.
+		if (meeting.getMediaMode() == MediaMode.MESH && runtime.participants().size() >= meshProperties.maxParticipants()) {
+			send(session, SignalingEnvelope.error(meetingId, "MESH_ROOM_FULL",
+					"Phòng đã đạt giới hạn " + meshProperties.maxParticipants()
+							+ " người cho chế độ kết nối trực tiếp — hãy tạo cuộc họp mới ở chế độ SFU cho phòng đông người."));
+			closeQuietly(session, CloseStatus.POLICY_VIOLATION.withReason("Mesh room full"));
 			return;
 		}
 

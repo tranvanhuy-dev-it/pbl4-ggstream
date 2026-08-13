@@ -29,6 +29,10 @@ mức trung bình.
 
 ## 1. Mesh (WebRTC 1:1/nhóm nhỏ) — **không thể dùng cho cuộc họp 100 người**
 
+**Trạng thái: đã triển khai** — `MeshProperties`/`app.mesh.max-participants`
+(mặc định 6), enforce trong `SignalingWebSocketHandler.handleJoin`, chỉ áp
+dụng cho `MediaMode.MESH`. Test: `MeshCapacityIntegrationTest`.
+
 ### Cấu trúc hiện tại
 
 Mỗi participant mở một `RTCPeerConnection` tới **từng** participant khác
@@ -149,11 +153,49 @@ thấy nhau.
   scale-out này — không cần một hệ thống pub/sub phân tán (Redis) cho phần
   signaling, miễn còn dùng sticky routing theo phòng.
 
+### Minh họa cấu hình (chỉ để tham khảo — chưa triển khai thật)
+
+Ví dụ dùng `nginx` với module `ngx_http_upstream_hash_module` để mọi
+request/WebSocket của cùng một `meetingId` luôn tới cùng một backend
+instance, dựa trên chính path của endpoint signaling
+(`/ws/meetings/{meetingId}`):
+
+```nginx
+upstream backend_pool {
+    hash $request_uri consistent;   # meetingId nằm trong path → cùng path = cùng instance
+    server 10.0.0.11:8080;
+    server 10.0.0.12:8080;
+    server 10.0.0.13:8080;
+}
+
+server {
+    listen 80;
+    location / {
+        proxy_pass http://backend_pool;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+```
+
+`consistent` (consistent hashing) nghĩa là thêm/bớt một backend instance
+chỉ làm xáo trộn một phần nhỏ số phòng đang route (không phải toàn bộ) —
+quan trọng khi scale lên/xuống mà không muốn ngắt kết nối hàng loạt. Đây
+là điểm khác biệt so với B1 (multi-node LiveKit): LiveKit dùng Redis để
+**chia sẻ** trạng thái giữa các node, còn signaling ở đây dùng sticky
+routing để **tránh phải chia sẻ** trạng thái — mỗi phòng vẫn chỉ thuộc về
+đúng một JVM, không có state nào cần đồng bộ giữa các instance.
+
 ---
 
 ## 4. Database (PostgreSQL)
 
-### Cấu trúc hiện tại
+**Trạng thái: đã triển khai** — `spring.datasource.hikari.maximum-pool-size`
+(mặc định 30, qua `DB_MAX_POOL_SIZE`), index trên `meeting_participants.meeting_id`
+và `chat_messages.meeting_id`. Mục "Cấu trúc hiện tại" bên dưới mô tả trạng
+thái **trước khi sửa** (giữ lại để giải thích lý do).
+
+### Cấu trúc hiện tại (trước khi sửa)
 
 - Một Hikari connection pool, **không cấu hình `maximum-pool-size`** →
   dùng mặc định của Hikari (10 connection). Ở 100 cuộc họp đang hoạt động
@@ -179,7 +221,13 @@ thấy nhau.
 
 ## 5. Livestream ingest + transcode (FFmpeg)
 
-### Cấu trúc hiện tại
+**Trạng thái: đã triển khai (hỗ trợ qua cấu hình)** —
+`LivestreamProperties.videoCodecArgs` (`LIVESTREAM_VIDEO_CODEC_ARGS`),
+mặc định vẫn `libx264` (phần mềm, an toàn cho mọi máy); đổi sang
+`h264_nvenc`/`h264_amf`/`h264_mf` là một biến môi trường, xem
+[livestream-setup.md](../networking/livestream-setup.md#3-chuyển-sang-mã-hóa-bằng-phần-cứng-tùy-chọn).
+
+### Cấu trúc hiện tại (trước khi sửa)
 
 Mỗi livestream = **một tiến trình FFmpeg riêng** (`FfmpegProcessLauncher`),
 encode H.264 bằng `libx264` (phần mềm, dùng CPU) — xem
@@ -241,17 +289,23 @@ một Tomcat instance nghĩa là:
 ## Thứ tự ưu tiên đề xuất
 
 ```text id="priority"
-1. Index cho meeting_participants/chat_messages + tăng Hikari pool   (rủi ro thấp, lợi ích cao, làm trước tiên)
-2. Giới hạn cứng Mesh theo số người (bắt buộc SFU cho phòng đông)
-3. Hardware encode cho FFmpeg (đổi 1 dòng cấu hình)
-4. Reverse proxy cache trước HLS output
-5. Sticky routing theo meetingId (cần khi thật sự chạy ≥2 backend instance)
-6. Multi-node LiveKit + Redis + simulcast (cần khi thật sự có nhiều
-   phòng/người đồng thời — hạng mục phức tạp nhất, nên đo tải thật trước
-   khi đầu tư)
+1. [ĐÃ LÀM] Index cho meeting_participants/chat_messages + tăng Hikari pool
+2. [ĐÃ LÀM] Giới hạn cứng Mesh theo số người (bắt buộc SFU cho phòng đông)
+3. [ĐÃ LÀM] Hardware encode cho FFmpeg — hỗ trợ qua cấu hình, mặc định vẫn phần mềm
+4. [Cấu hình mẫu] Reverse proxy cache trước HLS output
+5. [Cấu hình mẫu] Sticky routing theo meetingId (cần khi thật sự chạy ≥2 backend instance)
+6. [Cấu hình mẫu] Multi-node LiveKit + Redis + simulcast (hạng mục phức
+   tạp nhất, nên đo tải thật trước khi đầu tư)
 ```
 
-Các mục 1–4 có thể làm ngay, rủi ro thấp, không đổi kiến trúc lớn. Mục 5–6
-là hạ tầng multi-node thật sự — nên đo tải thực tế (giống tinh thần
-Milestone 10 benchmark Mesh) trước khi quyết định quy mô cụm cần thiết,
-thay vì scale trước khi biết giới hạn thật ở đâu.
+Mục 1–3 là code thật, đã implement và có test (xem
+`MeshCapacityIntegrationTest`, index trong `MeetingParticipant`/`ChatMessage`,
+`Hikari.maximum-pool-size`, `LivestreamProperties.videoCodecArgs`). Mục 4–6
+không có code ứng dụng để "chạy" trong repo này (nginx/Redis/nhiều
+instance là hạ tầng vận hành) — đã cung cấp cấu hình mẫu
+(`services/livestream/nginx-hls.conf.example`,
+`services/sfu/livekit-cluster.yaml.example`) và hướng dẫn triển khai trong
+`docs/networking/sfu-setup.md`/`livestream-setup.md`, nhưng chưa có hạ
+tầng nào trong số đó thực sự đang chạy — nên đo tải thực tế (giống tinh
+thần Milestone 10 benchmark Mesh) trước khi quyết định quy mô cụm cần
+thiết, thay vì dựng hạ tầng trước khi biết giới hạn thật ở đâu.

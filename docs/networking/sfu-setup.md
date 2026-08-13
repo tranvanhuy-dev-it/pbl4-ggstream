@@ -161,3 +161,52 @@ từng cặp peer.
 
 Nếu chỉ test trong cùng mạng LAN, có thể tắt tùy chọn này để giảm độ trễ
 khởi động, nhưng để mặc định bật vẫn hoạt động bình thường.
+
+## Multi-node + Redis
+
+**Trạng thái: chưa triển khai — mục này là tài liệu hướng dẫn, không phải**
+**hạ tầng đang chạy.** Xem lý do cần trong
+[architecture/scalability-plan.md](../architecture/scalability-plan.md)
+(mục 2): một `livekit-server.exe` duy nhất là điểm lỗi đơn (single point of
+failure) cho toàn bộ 100 cuộc họp đồng thời, và mọi log khởi động hiện tại
+đều in `"using single-node routing"` — nghĩa là LiveKit tự nhận diện chưa
+có Redis nên chạy chế độ 1 node.
+
+### Vì sao cần Redis
+
+Nhiều tiến trình `livekit-server.exe` **không** tự biết về nhau nếu chỉ
+chạy song song — mỗi tiến trình có bộ nhớ riêng. Redis đóng vai trò trạng
+thái dùng chung: node nào đang giữ room nào, participant nào đang ở node
+nào — để một client kết nối vào bất kỳ node nào trong cụm cũng tới đúng
+room, dù room đó đang thực sự chạy trên node khác.
+
+### Cài Redis trên Windows (không Docker)
+
+Hai lựa chọn, cùng tinh thần đã áp dụng cho Coturn
+([turn-setup.md](./turn-setup.md)):
+
+1. **WSL2** — cài Redis native bên trong (`sudo apt install redis-server`),
+   không phải container, không phải Docker image.
+2. **Memurai** — bản build Redis-compatible chạy native trên Windows
+   (không cần WSL2).
+
+Mặc định Redis lắng nghe `localhost:6379` — khớp giá trị mẫu trong
+`services/sfu/livekit-cluster.yaml.example`.
+
+### Tự kiểm tra multi-node cục bộ (2 node trên cùng máy)
+
+```powershell
+copy services\sfu\livekit-cluster.yaml.example services\sfu\livekit-node1.yaml
+copy services\sfu\livekit-cluster.yaml.example services\sfu\livekit-node2.yaml
+# sửa livekit-node2.yaml: port: 7890 (node1 giữ nguyên port: 7880)
+# cả hai file đều trỏ cùng redis.address, cùng cặp key/secret
+
+services\sfu\bin\livekit-server.exe --config services\sfu\livekit-node1.yaml
+services\sfu\bin\livekit-server.exe --config services\sfu\livekit-node2.yaml
+```
+
+Kết nối một client tới node 1, một client khác tới node 2 nhưng cùng
+`roomName` — nếu cả hai thấy nhau trong cùng room, cụm đang hoạt động
+đúng. Production thật cần thêm một load balancer (nginx/haproxy) đặt
+trước cả cụm — `apps/server`'s `LIVEKIT_URL` chỉ nên trỏ vào load
+balancer đó, không trỏ thẳng vào một node cụ thể.

@@ -9,6 +9,10 @@ spring:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/meet_platform}
     username: ${DATABASE_USERNAME:meet_user}
     password: ${DATABASE_PASSWORD:changeme}
+    hikari:
+      # Default Hikari pool (10) is too small once many meetings are
+      # concurrently active — see docs/architecture/scalability-plan.md.
+      maximum-pool-size: ${DB_MAX_POOL_SIZE:30}
 
   jpa:
     open-in-view: false
@@ -34,6 +38,8 @@ app:
     heartbeat-interval-seconds: ${WS_HEARTBEAT_INTERVAL_SECONDS:10}
     heartbeat-timeout-seconds: ${WS_HEARTBEAT_TIMEOUT_SECONDS:30}
     reconnect-grace-seconds: ${WS_RECONNECT_GRACE_SECONDS:15}
+  mesh:
+    max-participants: ${MESH_MAX_PARTICIPANTS:6}
   turn:
     host: ${TURN_HOST:}
     port: ${TURN_PORT:3478}
@@ -47,6 +53,7 @@ app:
   livestream:
     ffmpeg-path: ${LIVESTREAM_FFMPEG_PATH:ffmpeg}
     output-dir: ${LIVESTREAM_OUTPUT_DIR:./livestream-output}
+    video-codec-args: "${LIVESTREAM_VIDEO_CODEC_ARGS:-c:v libx264 -preset veryfast}"
 
 management:
   endpoints:

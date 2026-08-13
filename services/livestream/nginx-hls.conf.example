@@ -1,0 +1,52 @@
+# nginx reverse-proxy + cache in front of Spring Boot's HLS static output
+# (/livestreams/**, see WebConfig.addResourceHandlers). See
+# docs/architecture/scalability-plan.md (section 6) and
+# docs/networking/livestream-setup.md for why this exists: hundreds of
+# viewers of the same livestream all poll the exact same .m3u8/.ts files
+# within the same couple of seconds — serving that directly off one Spring
+# Boot/Tomcat instance's disk doesn't scale the way HLS is meant to.
+#
+# This is infrastructure config, not application code — nginx is not part
+# of this monorepo's build; install it separately (native Windows build
+# exists, no Docker needed) and point it at the backend below.
+
+proxy_cache_path C:/nginx/cache/hls levels=1:2 keys_zone=hls_cache:10m max_size=200m inactive=30s;
+
+server {
+    listen 8081;
+    server_name localhost;
+
+    # Everything else (REST API, WebSocket signaling/ingest, SFU token
+    # issuance, ...) still goes straight to the backend, uncached — only
+    # the HLS output benefits from caching.
+    location /livestreams/ {
+        proxy_pass http://localhost:8080;
+        proxy_cache hls_cache;
+
+        # A .ts segment never changes once written (FFmpeg writes a new
+        # filename each time) — safe to cache "forever" relative to a
+        # livestream's lifetime.
+        location ~ \.ts$ {
+            proxy_pass http://localhost:8080;
+            proxy_cache hls_cache;
+            proxy_cache_valid 200 60s;
+        }
+
+        # The playlist DOES change every segment — cache it only for
+        # roughly the FFmpeg -hls_time window (2s, see
+        # FfmpegProcessLauncher) so viewers polling it don't all hit
+        # Spring Boot individually, but still see new segments promptly.
+        location ~ \.m3u8$ {
+            proxy_pass http://localhost:8080;
+            proxy_cache hls_cache;
+            proxy_cache_valid 200 2s;
+        }
+    }
+
+    location / {
+        proxy_pass http://localhost:8080;
+        proxy_set_header Host $host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}

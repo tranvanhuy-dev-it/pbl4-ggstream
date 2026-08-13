@@ -10,6 +10,8 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,17 +35,25 @@ public class FfmpegProcessLauncher implements LivestreamProcessLauncher {
 
 	@Override
 	public LivestreamProcessHandle launch(UUID meetingId, Path playlistPath) throws IOException {
-		List<String> command = List.of(
-				properties.ffmpegPath(),
-				"-i", "pipe:0",
-				"-c:v", "libx264", "-preset", "veryfast",
-				"-c:a", "aac",
-				"-f", "hls",
-				"-hls_time", "2",
-				"-hls_list_size", "6",
-				"-hls_flags", "delete_segments",
-				playlistPath.toString()
-		);
+		List<String> command = new ArrayList<>();
+		command.add(properties.ffmpegPath());
+		command.add("-i");
+		command.add("pipe:0");
+		// Configurable so switching to hardware encoding (nvenc/amf/mf) is
+		// an env var change, not a code change — see LivestreamProperties.
+		command.addAll(Arrays.asList(properties.videoCodecArgs().trim().split("\\s+")));
+		command.add("-c:a");
+		command.add("aac");
+		command.add("-f");
+		command.add("hls");
+		command.add("-hls_time");
+		command.add("2");
+		command.add("-hls_list_size");
+		command.add("6");
+		command.add("-hls_flags");
+		command.add("delete_segments");
+		command.add(playlistPath.toString());
+
 		ProcessBuilder builder = new ProcessBuilder(command);
 		// Keep stderr separate from stdout — FFmpeg writes its (very
 		// verbose) progress/diagnostics to stderr, which we log but never

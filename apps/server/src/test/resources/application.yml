@@ -20,6 +20,11 @@ app:
     heartbeat-timeout-seconds: 4
     heartbeat-check-interval-ms: 300
     reconnect-grace-seconds: 1
+  mesh:
+    # High on purpose — MeshSignalingIntegrationTest already exercises 4
+    # participants in one room; the capacity limit itself gets its own
+    # small value via @TestPropertySource in MeshCapacityIntegrationTest.
+    max-participants: 50
   turn:
     host: turn.test.invalid
     port: 3478
@@ -33,6 +38,7 @@ app:
   livestream:
     ffmpeg-path: ffmpeg
     output-dir: ./target/test-livestream-output
+    video-codec-args: "-c:v libx264 -preset veryfast"
 
 # NOTE: this file fully replaces src/main/resources/application.yml on the
 # test classpath (Spring Boot loads the first "application.yml" it finds —

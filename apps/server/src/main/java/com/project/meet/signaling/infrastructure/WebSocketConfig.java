@@ -2,9 +2,11 @@ package com.project.meet.signaling.infrastructure;
 
 import com.project.meet.chat.application.SendChatMessageUseCase;
 import com.project.meet.common.config.CorsProperties;
+import com.project.meet.common.config.MeshProperties;
 import com.project.meet.common.config.WebSocketProperties;
 import com.project.meet.common.security.JwtService;
 import com.project.meet.livestream.application.LivestreamRegistry;
+import com.project.meet.livestream.infrastructure.LivestreamHandshakeInterceptor;
 import com.project.meet.livestream.infrastructure.LivestreamIngestWebSocketHandler;
 import com.project.meet.meeting.infrastructure.MeetingRepository;
 import com.project.meet.signaling.application.MeetingRuntimeRegistry;
@@ -29,6 +31,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
 	private final ObjectMapper objectMapper;
 	private final CorsProperties corsProperties;
 	private final WebSocketProperties webSocketProperties;
+	private final MeshProperties meshProperties;
 	private final LivestreamRegistry livestreamRegistry;
 
 	public WebSocketConfig(
@@ -41,6 +44,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
 			ObjectMapper objectMapper,
 			CorsProperties corsProperties,
 			WebSocketProperties webSocketProperties,
+			MeshProperties meshProperties,
 			LivestreamRegistry livestreamRegistry
 	) {
 		this.jwtService = jwtService;
@@ -52,21 +56,22 @@ public class WebSocketConfig implements WebSocketConfigurer {
 		this.objectMapper = objectMapper;
 		this.corsProperties = corsProperties;
 		this.webSocketProperties = webSocketProperties;
+		this.meshProperties = meshProperties;
 		this.livestreamRegistry = livestreamRegistry;
 	}
 
 	@Override
 	public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
 		registry.addHandler(
-						new SignalingWebSocketHandler(runtimeRegistry, dispatcher, meetingRepository, userRepository, sendChatMessageUseCase, objectMapper, webSocketProperties),
+						new SignalingWebSocketHandler(runtimeRegistry, dispatcher, meetingRepository, userRepository, sendChatMessageUseCase, objectMapper, webSocketProperties, meshProperties),
 						"/ws/meetings/{meetingId}")
 				.addInterceptors(new SignalingHandshakeInterceptor(jwtService, meetingRepository))
 				.setAllowedOrigins(corsProperties.allowedOrigins().toArray(new String[0]));
 
 		registry.addHandler(
 						new LivestreamIngestWebSocketHandler(livestreamRegistry),
-						"/ws/meetings/{meetingId}/livestream-ingest")
-				.addInterceptors(new SignalingHandshakeInterceptor(jwtService, meetingRepository))
+						"/ws/live/{id}/ingest")
+				.addInterceptors(new LivestreamHandshakeInterceptor(jwtService))
 				.setAllowedOrigins(corsProperties.allowedOrigins().toArray(new String[0]));
 	}
 }

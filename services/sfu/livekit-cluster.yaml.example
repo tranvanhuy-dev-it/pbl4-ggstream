@@ -1,0 +1,34 @@
+# LiveKit multi-node config (see docs/architecture/scalability-plan.md,
+# section 2 — one livekit-server.exe process is a single point of failure
+# and a hard capacity ceiling for "100 concurrent meetings").
+#
+# Multiple livekit-server.exe processes coordinate room routing through a
+# shared Redis instance instead of in-memory state — this is what turns
+# "single-node routing" (seen in every livekit-server.exe startup log so
+# far) into a real cluster. Nothing else about how the app talks to
+# LiveKit changes: the backend still only knows one LIVEKIT_URL, which
+# should point at a load balancer in front of the node pool, not at any
+# one node directly.
+#
+# This is infrastructure/ops config, not application code — there is no
+# "npm run" or "mvnw" equivalent for standing up a cluster; follow
+# docs/networking/sfu-setup.md#multi-node--redis for the manual steps.
+
+port: 7880          # node 1; a second local node for testing uses 7890 (see setup doc)
+
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: true
+
+# Only addition versus livekit.yaml.example — every node in the cluster
+# must point at the SAME Redis instance.
+redis:
+  address: localhost:6379
+  # username: ""
+  # password: ""
+  # db: 0
+
+keys:
+  REPLACE_WITH_GENERATED_API_KEY: REPLACE_WITH_GENERATED_API_SECRET
