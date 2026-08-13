@@ -10,6 +10,7 @@ import { useAuth } from "@/features/auth/context/AuthContext";
 import { CreateJoinMeeting } from "@/features/meeting/components/CreateJoinMeeting";
 import * as meetingApi from "@/features/meeting/api/meetingApi";
 import type { Meeting } from "@/features/meeting/api/meetingApi";
+import { LivestreamIcon } from "@/components/icons";
 
 function Brand() {
   return (
@@ -132,6 +133,12 @@ export default function Home() {
               </span>
               Cuộc gọi
             </button>
+            <Link href="/live" className="flex w-20 flex-col items-center gap-2 text-xs font-medium">
+              <span className="flex h-11 w-14 items-center justify-center rounded-full hover:bg-neutral-200 dark:hover:bg-neutral-700">
+                {LivestreamIcon}
+              </span>
+              Trực tiếp
+            </Link>
           </aside>
 
           <main className="flex min-w-0 flex-1 flex-col overflow-y-auto px-4 py-5 md:px-8 lg:px-12">
